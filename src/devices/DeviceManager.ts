@@ -1,7 +1,9 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
+import * as fs from 'fs';
 import { promisify } from 'util';
 import { AndroidSDKManager } from '../core/AndroidSDKManager';
-import { exec, spawn, ChildProcess } from 'child_process'; // Added spawn and ChildProcess
+import { exec, spawn, ChildProcess } from 'child_process';
 
 const execAsync = promisify(exec);
 
@@ -129,14 +131,8 @@ export class DeviceManager {
             
             this.devices = [];
             
-            // Notify user of error
-            vscode.window.showErrorMessage(
-                `❌ Failed to refresh devices: ${error.message}\n\n` +
-                'Possible causes:\n' +
-                '• Android SDK not installed or not detected\n' +
-                '• ADB not found in platform-tools\n' +
-                '• Device not connected or USB Debugging not enabled'
-            );
+            // Concise toast, details available in debug console
+            vscode.window.showErrorMessage(`❌ ADB device refresh failed: ${error.message}. Check debug console for details.`);
         }
     }
 
@@ -152,6 +148,17 @@ export class DeviceManager {
      */
     getSelectedDevice(): AndroidDevice | null {
         return this.selectedDevice;
+    }
+
+    /**
+     * Select a device by its ID (used by tree view selection)
+     */
+    selectDeviceById(deviceId: string): void {
+        const device = this.devices.find(d => d.id === deviceId);
+        if (device) {
+            this.selectedDevice = device;
+            this.onDidChangeDevicesEmitter.fire();
+        }
     }
 
     /**
@@ -216,11 +223,31 @@ export class DeviceManager {
     }
 
     /**
-     * Get package name from APK
-     * TODO: Implement proper APK parsing using aapt
+     * Get package name from APK using aapt.
+     * Falls back to extracting from the filename if aapt is unavailable.
      */
     async getPackageName(apkPath: string): Promise<string> {
-        return 'com.example.app'; // Simplified for now
+        try {
+            const adbPath = this.sdkManager.getADBPath();
+            const sdkDir = path.dirname(path.dirname(adbPath));
+            const buildToolsDir = path.join(sdkDir, 'build-tools');
+
+            if (fs.existsSync(buildToolsDir)) {
+                const versions = fs.readdirSync(buildToolsDir).sort().reverse();
+                for (const ver of versions) {
+                    const aaptPath = path.join(buildToolsDir, ver, process.platform === 'win32' ? 'aapt.exe' : 'aapt');
+                    if (fs.existsSync(aaptPath)) {
+                        const { stdout } = await execAsync(`"${aaptPath}" dump badging "${apkPath}"`);
+                        const match = stdout.match(/package:\s*name='([^']+)'/);
+                        if (match?.[1]) return match[1];
+                    }
+                }
+            }
+        } catch { /* fall through */ }
+
+        // Fallback: extract from filename
+        const basename = path.basename(apkPath).replace(/-debug|-release|-unsigned/g, '').replace(/\.apk$/, '');
+        return basename;
     }
 
     dispose() {

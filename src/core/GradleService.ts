@@ -303,7 +303,7 @@ export class GradleService {
      * Handles build flavors (e.g. build/outputs/apk/flavor/debug/app.apk).
      */
     getApkPath(variant: 'debug' | 'release' = 'debug'): string {
-        const workspaceFolder = vscode.workspace.workspaceFolders![0].uri.fsPath;
+        const projectRoot = this.findProjectRoot();
         
         // Determine module path from targetModule (e.g. :feature:login -> feature/login)
         // Default to 'app' if no module selected (standard Android convention)
@@ -314,7 +314,7 @@ export class GradleService {
         }
 
         const baseApkDir = path.join(
-            workspaceFolder,
+            projectRoot,
             modulePath,
             'build',
             'outputs',

@@ -8,49 +8,53 @@ export class BuildStatusBar {
     private runStatusBarItem: vscode.StatusBarItem;
 
     constructor(private deviceManager: DeviceManager) {
-        // Run button only
         this.runStatusBarItem = vscode.window.createStatusBarItem(
             vscode.StatusBarAlignment.Left,
             100
         );
 
-        this.setupStatusBarItems();
-        this.update();
-        this.show();
+        this.runStatusBarItem.command = 'android.runApp';
+        this.runStatusBarItem.tooltip = 'Build and Run on device';
+        this.runStatusBarItem.show();
 
-        // Update when devices change
+        this.update();
+
         this.deviceManager.onDidChangeDevices(() => {
             this.update();
         });
     }
 
-    private setupStatusBarItems() {
-        // Run button with device name
-        this.runStatusBarItem.command = 'android.runApp';
-        this.runStatusBarItem.tooltip = 'Build and Run on device';
+    /**
+     * Show a temporary status message (e.g. build progress).
+     */
+    showBuildStatus(message: string): void {
+        this.runStatusBarItem.text = `$(sync~spin) ${message}`;
     }
 
+    /**
+     * Restore to normal device display.
+     */
     update() {
         const selectedDevice = this.deviceManager.getSelectedDevice();
         const devices = this.deviceManager.getDevices();
 
         if (selectedDevice) {
             const icon = selectedDevice.type === 'emulator' ? '$(device-mobile)' : '$(device-camera)';
-            const name = selectedDevice.model || selectedDevice.product || selectedDevice.id.substring(0, 10);
-            this.runStatusBarItem.text = `${icon} ▶️ Run on ${name}`;
+            const name = this.getDisplayName(selectedDevice);
+            this.runStatusBarItem.text = `${icon} ▶️ ${name}`;
+            this.runStatusBarItem.tooltip = `Run on ${name} (${selectedDevice.id})`;
         } else if (devices.length > 0) {
-            this.runStatusBarItem.text = '$(warning) ▶️ Run (Select Device)';
+            this.runStatusBarItem.text = '$(warning) ▶️ Select Device';
+            this.runStatusBarItem.tooltip = 'Click to select a device';
         } else {
-            this.runStatusBarItem.text = '$(warning) ▶️ Run (No Devices)';
+            this.runStatusBarItem.text = '$(warning) ▶️ No Device';
+            this.runStatusBarItem.tooltip = 'No devices connected';
         }
     }
 
-    show() {
-        this.runStatusBarItem.show();
-    }
-
-    hide() {
-        this.runStatusBarItem.hide();
+    private getDisplayName(device: { id: string; type: string; model?: string; product?: string }): string {
+        // Prefer model name, then product, then first 15 chars of ID
+        return device.model || device.product || device.id.substring(0, Math.min(device.id.length, 15));
     }
 
     dispose() {

@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
+import * as fs from 'fs';
 import { AndroidSDKManager } from './core/AndroidSDKManager';
 import { GradleService } from './core/GradleService';
 import { GradleModuleService } from './core/GradleModuleService';
@@ -10,6 +12,39 @@ import { LogcatManager } from './logcat/LogcatManager';
 import { WirelessADBManager } from './wireless/WirelessADBManager';
 import { KeystoreManager } from './signing/KeystoreManager';
 import { SigningWizard } from './signing/SigningWizard';
+import { runDiagnostics } from './utils/diagnostics';
+
+/**
+ * Quick check whether the workspace looks like an Android project.
+ * Avoids activating in random workspaces that happen to have a build.gradle.
+ */
+function isAndroidWorkspace(rootPath: string): boolean {
+    const hasSettings = fs.existsSync(path.join(rootPath, 'settings.gradle')) ||
+                        fs.existsSync(path.join(rootPath, 'settings.gradle.kts'));
+    const hasWrapper = fs.existsSync(path.join(rootPath, 'gradlew')) ||
+                       fs.existsSync(path.join(rootPath, 'gradlew.bat'));
+    const hasAppBuild = fs.existsSync(path.join(rootPath, 'app', 'build.gradle')) ||
+                        fs.existsSync(path.join(rootPath, 'app', 'build.gradle.kts'));
+
+    if (hasSettings || hasWrapper || hasAppBuild) {
+        return true;
+    }
+
+    // Check one level deep (projects with android/ subdirectory, e.g. Flutter)
+    try {
+        const subdirs = fs.readdirSync(rootPath)
+            .map((n: string) => path.join(rootPath, n))
+            .filter((d: string) => fs.statSync(d).isDirectory());
+        return subdirs.some((dir: string) =>
+            fs.existsSync(path.join(dir, 'settings.gradle')) ||
+            fs.existsSync(path.join(dir, 'settings.gradle.kts')) ||
+            fs.existsSync(path.join(dir, 'gradlew')) ||
+            fs.existsSync(path.join(dir, 'gradlew.bat'))
+        );
+    } catch {
+        return false;
+    }
+}
 
 let deviceManager: DeviceManager;
 let buildSystem: BuildSystem;
@@ -19,6 +54,13 @@ let treeProvider: AndroidTreeProvider;
 let wirelessManager: WirelessADBManager;
 
 export async function activate(context: vscode.ExtensionContext) {
+    // Early exit: only activate for actual Android projects
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    if (!workspaceFolder || !isAndroidWorkspace(workspaceFolder.uri.fsPath)) {
+        console.log('⏭️ Not an Android project, skipping activation');
+        return;
+    }
+
     console.log('🚀 Android Studio Flash is now active!');
 
     try {
@@ -27,8 +69,9 @@ export async function activate(context: vscode.ExtensionContext) {
         const gradleService = new GradleService(sdkManager);
         const gradleModuleService = new GradleModuleService(); // New Service
         deviceManager = new DeviceManager();
-        buildSystem = new BuildSystem(gradleService, deviceManager);
-        logcatManager = new LogcatManager(deviceManager);
+        statusBar = new BuildStatusBar(deviceManager);
+        buildSystem = new BuildSystem(gradleService, deviceManager, statusBar);
+        logcatManager = new LogcatManager(deviceManager, sdkManager);
         wirelessManager = new WirelessADBManager(sdkManager.getADBPath(), context);
 
         // Initialize signing components
@@ -183,14 +226,8 @@ export async function activate(context: vscode.ExtensionContext) {
 
         context.subscriptions.push(
             vscode.commands.registerCommand('android.selectDeviceFromTree', async (device) => {
-                // Select device directly from Tree
                 if (device) {
-                    deviceManager.getDevices().forEach(d => {
-                        if (d.id === device.id) {
-                            deviceManager['selectedDevice'] = d;
-                            deviceManager['onDidChangeDevicesEmitter'].fire();
-                        }
-                    });
+                    deviceManager.selectDeviceById(device.id);
                     statusBar.update();
                     treeProvider.refresh();
                     vscode.window.showInformationMessage(`✅ Selected: ${device.id}`);
@@ -259,7 +296,6 @@ export async function activate(context: vscode.ExtensionContext) {
         // Diagnostics Command
         context.subscriptions.push(
             vscode.commands.registerCommand('android.runDiagnostics', async () => {
-                const { runDiagnostics } = require('./utils/diagnostics');
                 await runDiagnostics(context);
             })
         );

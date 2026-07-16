@@ -229,15 +229,48 @@ export class PackageNameDetector {
     }
 
     /**
+     * Find the Android project root directory (mirrors GradleService.findProjectRoot).
+     */
+    private static findProjectRoot(): string | null {
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+        if (!workspaceFolder) return null;
+
+        const rootPath = workspaceFolder.uri.fsPath;
+
+        // Check if workspace root is project root
+        const isRoot = (dir: string): boolean => {
+            const hasSettings = fs.existsSync(path.join(dir, 'settings.gradle')) ||
+                               fs.existsSync(path.join(dir, 'settings.gradle.kts'));
+            const hasBuild = fs.existsSync(path.join(dir, 'build.gradle')) ||
+                            fs.existsSync(path.join(dir, 'build.gradle.kts'));
+            const hasWrapper = fs.existsSync(path.join(dir, 'gradlew')) ||
+                              fs.existsSync(path.join(dir, 'gradlew.bat'));
+            return (hasSettings || hasBuild) && hasWrapper;
+        };
+
+        if (isRoot(rootPath)) return rootPath;
+
+        try {
+            const subdirs = fs.readdirSync(rootPath)
+                .map(name => path.join(rootPath, name))
+                .filter(dir => fs.statSync(dir).isDirectory());
+
+            for (const dir of subdirs) {
+                if (isRoot(dir)) return dir;
+            }
+        } catch { /* ignore */ }
+
+        return rootPath;
+    }
+
+    /**
      * Extract Package Name from project (with Build Variants support)
      */
     static async detectPackageName(): Promise<string | null> {
-        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-        if (!workspaceFolder) {
+        const projectRoot = this.findProjectRoot();
+        if (!projectRoot) {
             return null;
         }
-
-        const projectRoot = workspaceFolder.uri.fsPath;
 
         // Try 1: From build.gradle with Build Variants
         const packageFromGradle = await this.extractFromBuildGradle(projectRoot);

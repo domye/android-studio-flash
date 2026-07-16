@@ -205,16 +205,49 @@ export class SigningWizard {
     }
 
     /**
+     * Find Android project root (mirrors GradleService.findProjectRoot).
+     */
+    private findProjectRoot(): string | undefined {
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+        if (!workspaceFolder) return undefined;
+
+        const rootPath = workspaceFolder.uri.fsPath;
+
+        const isRoot = (dir: string): boolean => {
+            const hasSettings = fs.existsSync(path.join(dir, 'settings.gradle')) ||
+                               fs.existsSync(path.join(dir, 'settings.gradle.kts'));
+            const hasBuild = fs.existsSync(path.join(dir, 'build.gradle')) ||
+                            fs.existsSync(path.join(dir, 'build.gradle.kts'));
+            const hasWrapper = fs.existsSync(path.join(dir, 'gradlew')) ||
+                              fs.existsSync(path.join(dir, 'gradlew.bat'));
+            return (hasSettings || hasBuild) && hasWrapper;
+        };
+
+        if (isRoot(rootPath)) return rootPath;
+
+        try {
+            const subdirs = fs.readdirSync(rootPath)
+                .map(name => path.join(rootPath, name))
+                .filter(dir => fs.statSync(dir).isDirectory());
+            for (const dir of subdirs) {
+                if (isRoot(dir)) return dir;
+            }
+        } catch { /* ignore */ }
+
+        return rootPath;
+    }
+
+    /**
      * Check if build.gradle already has signing configuration
      */
     private async checkGradleSigningConfig(): Promise<boolean> {
-        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-        if (!workspaceFolder) return false;
+        const projectRoot = this.findProjectRoot();
+        if (!projectRoot) return false;
 
         // Check app/build.gradle or app/build.gradle.kts
         const gradleFiles = [
-            path.join(workspaceFolder.uri.fsPath, 'app', 'build.gradle'),
-            path.join(workspaceFolder.uri.fsPath, 'app', 'build.gradle.kts')
+            path.join(projectRoot, 'app', 'build.gradle'),
+            path.join(projectRoot, 'app', 'build.gradle.kts')
         ];
 
         for (const gradleFile of gradleFiles) {

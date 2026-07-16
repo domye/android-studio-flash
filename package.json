@@ -32,11 +32,15 @@
     "wireless debugging"
   ],
   "activationEvents": [
-    "workspaceContains:**/build.gradle",
-    "workspaceContains:**/build.gradle.kts",
+    "workspaceContains:**/settings.gradle",
+    "workspaceContains:**/settings.gradle.kts",
+    "workspaceContains:**/gradlew",
+    "workspaceContains:**/gradlew.bat",
+    "workspaceContains:**/app/build.gradle",
+    "workspaceContains:**/app/build.gradle.kts",
     "onCommand:android.buildApk",
     "onCommand:android.runApp",
-    "onView:androidDevices"
+    "onView:androidPanel"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -252,7 +256,7 @@
     "test": "node ./out/test/runTest.js"
   },
   "devDependencies": {
-    "@types/node": "^18.0.0",
+    "@types/node": "^18.19.130",
     "@types/vscode": "^1.75.0",
     "@typescript-eslint/eslint-plugin": "^5.0.0",
     "@typescript-eslint/parser": "^5.0.0",

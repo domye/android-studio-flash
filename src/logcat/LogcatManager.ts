@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
+import * as fs from 'fs';
 import { spawn, ChildProcess } from 'child_process';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -23,10 +25,42 @@ export class LogcatManager {
     private currentTag: string = '';
     private useGrepFilter: boolean = false; // For code-level filtering if --pid doesn't work
 
-    constructor(private deviceManager: DeviceManager) {
-        // Use LogOutputChannel instead of OutputChannel for color support
+    constructor(private deviceManager: DeviceManager, sdkManager?: AndroidSDKManager) {
         this.outputChannel = vscode.window.createOutputChannel('Android Logcat', { log: true });
-        this.sdkManager = new AndroidSDKManager();
+        this.sdkManager = sdkManager || new AndroidSDKManager();
+    }
+
+    /**
+     * Find the Android project root directory.
+     */
+    private findProjectRoot(): string | undefined {
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+        if (!workspaceFolder) return undefined;
+
+        const rootPath = workspaceFolder.uri.fsPath;
+
+        const isRoot = (dir: string): boolean => {
+            const hasSettings = fs.existsSync(path.join(dir, 'settings.gradle')) ||
+                               fs.existsSync(path.join(dir, 'settings.gradle.kts'));
+            const hasBuild = fs.existsSync(path.join(dir, 'build.gradle')) ||
+                            fs.existsSync(path.join(dir, 'build.gradle.kts'));
+            const hasWrapper = fs.existsSync(path.join(dir, 'gradlew')) ||
+                              fs.existsSync(path.join(dir, 'gradlew.bat'));
+            return (hasSettings || hasBuild) && hasWrapper;
+        };
+
+        if (isRoot(rootPath)) return rootPath;
+
+        try {
+            const subdirs = fs.readdirSync(rootPath)
+                .map(name => path.join(rootPath, name))
+                .filter(dir => fs.statSync(dir).isDirectory());
+            for (const dir of subdirs) {
+                if (isRoot(dir)) return dir;
+            }
+        } catch { /* ignore */ }
+
+        return rootPath;
     }
 
     /**
@@ -58,8 +92,7 @@ export class LogcatManager {
 
         // If mode is "app" and no package name
         if (this.currentFilterMode === 'app' && !this.currentPackageName) {
-            const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-            const projectRoot = workspaceFolder?.uri.fsPath;
+            const projectRoot = this.findProjectRoot();
 
             // Use smart detection system to get all sources
             const detectionResults = await PackageNameDetector.detectPackageNameSmart(

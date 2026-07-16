@@ -6,7 +6,7 @@ import * as vscode from 'vscode';
 const execAsync = promisify(exec);
 
 /**
- * Represents a device found during network scan
+ * 网络扫描中发现的设备
  */
 export interface ScannedDevice {
     ip: string;
@@ -15,37 +15,34 @@ export interface ScannedDevice {
 }
 
 /**
- * Scans the local network for Android devices with ADB enabled.
+ * 扫描本地网络中启用了 ADB 的 Android 设备。
  */
 export class NetworkScanner {
     constructor(private adbPath: string) {}
 
     /**
-     * Scan local network for Android devices
+     * 扫描本地网络中的 Android 设备
      */
     async scanNetwork(): Promise<ScannedDevice[]> {
         const localIp = this.getLocalIp();
         if (!localIp) {
-            vscode.window.showErrorMessage('❌ Could not determine local IP');
+            vscode.window.showErrorMessage('无法确定本地 IP 地址');
             return [];
         }
 
-        // Extract subnet (e.g., 192.168.1)
         const subnet = localIp.substring(0, localIp.lastIndexOf('.'));
 
         return await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
-            title: '🔍 Scanning network...',
+            title: '正在扫描网络...',
             cancellable: true
         }, async (progress, token) => {
             const devices: ScannedDevice[] = [];
-            const port = 5555; // Default ADB port
+            const port = 5555;
 
-            // Scan from .1 to .254 (with speed optimization)
-            // Testing only a sample of addresses for speed
             const ipsToTest: string[] = [];
-            
-            // Test common addresses first
+
+            // 优先测试常见地址段
             for (let i = 1; i <= 20; i++) {
                 ipsToTest.push(`${subnet}.${i}`);
             }
@@ -63,12 +60,11 @@ export class NetworkScanner {
                 }
 
                 tested++;
-                progress.report({ 
-                    message: `Checking ${ip}... (${tested}/${ipsToTest.length})`,
+                progress.report({
+                    message: `正在检查 ${ip}... (${tested}/${ipsToTest.length})`,
                     increment: (100 / ipsToTest.length)
                 });
 
-                // Attempt connection (without long timeout)
                 if (await this.testConnection(ip, port)) {
                     devices.push({ ip, port });
                 }
@@ -79,11 +75,11 @@ export class NetworkScanner {
     }
 
     /**
-     * Get local IP address
+     * 获取本地 IP 地址
      */
     private getLocalIp(): string | null {
         const interfaces = os.networkInterfaces();
-        
+
         for (const name of Object.keys(interfaces)) {
             const iface = interfaces[name];
             if (!iface) {
@@ -91,7 +87,6 @@ export class NetworkScanner {
             }
 
             for (const alias of iface) {
-                // IPv4 and not loopback
                 if (alias.family === 'IPv4' && !alias.internal) {
                     return alias.address;
                 }
@@ -102,25 +97,22 @@ export class NetworkScanner {
     }
 
     /**
-     * Test connection to IP:Port
+     * 测试能否连接到 IP:Port
      */
     private async testConnection(ip: string, port: number): Promise<boolean> {
         try {
             const endpoint = `${ip}:${port}`;
-            
-            // Quick connection attempt with short timeout
+
             const { stdout } = await execAsync(
                 `"${this.adbPath}" connect ${endpoint}`,
-                { timeout: 1500 } // 1.5 seconds timeout only
+                { timeout: 1500 }
             );
 
-            // If connection succeeded
             if (stdout.includes('connected')) {
-                // Disconnect immediately (testing only)
                 try {
                     await execAsync(`"${this.adbPath}" disconnect ${endpoint}`, { timeout: 500 });
                 } catch (e) {
-                    // Ignore disconnect errors
+                    // 忽略断开连接时的错误
                 }
                 return true;
             }
@@ -128,7 +120,6 @@ export class NetworkScanner {
             return false;
 
         } catch (error) {
-            // Connection failed = device not found
             return false;
         }
     }

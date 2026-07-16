@@ -8,18 +8,18 @@ import { AndroidDevice } from '../devices/DeviceManager';
 const execAsync = promisify(exec);
 
 /**
- * Represents a wirelessly connected Android device
+ * 无线连接的 Android 设备
  */
 export interface WirelessDevice extends AndroidDevice {
     connectionType: 'wireless-debug' | 'tcpip';
     ipAddress: string;
     port: number;
     paired?: boolean;
-    lastConnected?: number; // timestamp
+    lastConnected?: number;
 }
 
 /**
- * Saved wireless device configuration for persistence
+ * 持久化保存的无线设备配置
  */
 interface SavedWirelessDevice {
     id: string;
@@ -31,7 +31,7 @@ interface SavedWirelessDevice {
 }
 
 /**
- * Manages wireless ADB connections including Wireless Debugging (Android 11+) and TCP/IP.
+ * 管理无线 ADB 连接，包括 Wireless Debugging（Android 11+）和 TCP/IP。
  */
 export class WirelessADBManager {
     private wirelessDebugger: WirelessDebugger;
@@ -50,12 +50,11 @@ export class WirelessADBManager {
     }
 
     /**
-     * Open wireless connection setup UI
+     * 打开无线连接设置向导
      */
     async setupWirelessConnection(): Promise<void> {
-        // Show Quick Pick to select method
         const method = await this.promptConnectionMethod();
-        
+
         if (!method) {
             return;
         }
@@ -71,37 +70,37 @@ export class WirelessADBManager {
     }
 
     /**
-     * Prompt user to select connection method
+     * 选择连接方式
      */
     private async promptConnectionMethod(): Promise<'wireless-debug' | 'tcpip' | null> {
         const items = [
             {
-                label: '$(radio-tower) Wireless Debugging',
-                description: 'Android 11+ - Easiest',
-                detail: 'Use QR Code or Pairing Code',
+                label: '无线调试',
+                description: 'Android 11+ - 最简单',
+                detail: '使用二维码或配对码',
                 method: 'wireless-debug' as const
             },
             {
-                label: '$(plug) ADB over TCP/IP',
-                description: 'Android 4.0+ - Requires USB once',
-                detail: 'For older devices',
+                label: 'ADB over TCP/IP',
+                description: 'Android 4.0+ - 需要一次 USB 连接',
+                detail: '适用于旧设备',
                 method: 'tcpip' as const
             }
         ];
 
         const selected = await vscode.window.showQuickPick(items, {
-            placeHolder: 'Select wireless connection method'
+            placeHolder: '选择无线连接方式'
         });
 
         return selected?.method || null;
     }
 
     /**
-     * Setup Wireless Debugging (Android 11+)
+     * 设置 Wireless Debugging（Android 11+）
      */
     private async setupWirelessDebugging(): Promise<void> {
         const pairingMethod = await this.wirelessDebugger.promptPairingMethod();
-        
+
         if (!pairingMethod) {
             return;
         }
@@ -110,32 +109,23 @@ export class WirelessADBManager {
             await this.wirelessDebugger.pairWithCode();
         } else {
             vscode.window.showInformationMessage(
-                '⚠️ QR Code pairing will be added soon. Use Pairing Code for now.'
+                '二维码配对即将支持。请先使用配对码。'
             );
         }
 
-        // Update device list
         this.onDidChangeDevicesEmitter.fire();
     }
 
     /**
-     * Setup ADB over TCP/IP
+     * 设置 ADB over TCP/IP
      */
     private async setupTcpIp(): Promise<void> {
         await this.tcpIpConnector.setupConnection();
-        
-        // Update device list
         this.onDidChangeDevicesEmitter.fire();
     }
 
     /**
-     * ═══════════════════════════════════════════════════════
-     *  PERSISTENCE SYSTEM
-     * ═══════════════════════════════════════════════════════
-     */
-
-    /**
-     * Save all current wireless devices
+     * 保存所有当前无线设备
      */
     private async saveWirelessDevices(): Promise<void> {
         try {
@@ -149,19 +139,19 @@ export class WirelessADBManager {
             }));
 
             await this.context.globalState.update(this.STORAGE_KEY, savedDevices);
-            console.log(`💾 Saved ${savedDevices.length} wireless devices`);
+            console.log(`Saved ${savedDevices.length} wireless devices`);
         } catch (error) {
             console.error('Failed to save wireless devices:', error);
         }
     }
 
     /**
-     * Load saved devices from storage
+     * 从存储中加载已保存的设备
      */
     private async loadWirelessDevices(): Promise<SavedWirelessDevice[]> {
         try {
             const saved = this.context.globalState.get<SavedWirelessDevice[]>(this.STORAGE_KEY, []);
-            console.log(`📂 Loaded ${saved.length} saved wireless devices`);
+            console.log(`Loaded ${saved.length} saved wireless devices`);
             return saved;
         } catch (error) {
             console.error('Failed to load wireless devices:', error);
@@ -170,16 +160,14 @@ export class WirelessADBManager {
     }
 
     /**
-     * Add device to saved list
+     * 添加设备到已保存列表
      */
     async addSavedDevice(device: WirelessDevice): Promise<void> {
         try {
             const saved = await this.loadWirelessDevices();
-            
-            // Remove old version if exists
+
             const filtered = saved.filter(d => d.id !== device.id);
-            
-            // Add new device
+
             filtered.push({
                 id: device.id,
                 ipAddress: device.ipAddress,
@@ -190,155 +178,140 @@ export class WirelessADBManager {
             });
 
             await this.context.globalState.update(this.STORAGE_KEY, filtered);
-            console.log(`✅ Added device to saved list: ${device.id}`);
+            console.log(`Added device to saved list: ${device.id}`);
         } catch (error) {
             console.error('Failed to add saved device:', error);
         }
     }
 
     /**
-     * Remove device from saved list
+     * 从已保存列表移除设备
      */
     async removeSavedDevice(deviceId: string): Promise<void> {
         try {
             const saved = await this.loadWirelessDevices();
             const filtered = saved.filter(d => d.id !== deviceId);
             await this.context.globalState.update(this.STORAGE_KEY, filtered);
-            console.log(`🗑️ Removed device from saved list: ${deviceId}`);
-            
-            vscode.window.showInformationMessage(`✅ Device forgotten: ${deviceId}`);
+            console.log(`Removed device from saved list: ${deviceId}`);
+
+            vscode.window.showInformationMessage(`已忘记设备: ${deviceId}`);
         } catch (error) {
             console.error('Failed to remove saved device:', error);
         }
     }
 
     /**
-     * Auto-reconnect to saved devices on startup
+     * 启动时自动重连已保存的设备
      */
     async autoReconnectSavedDevices(): Promise<void> {
         const saved = await this.loadWirelessDevices();
-        
+
         if (saved.length === 0) {
-            console.log('ℹ️ No saved wireless devices to reconnect');
+            console.log('No saved wireless devices to reconnect');
             return;
         }
 
-        console.log(`🔄 Attempting to reconnect ${saved.length} saved devices...`);
+        console.log(`Attempting to reconnect ${saved.length} saved devices...`);
 
-        // Reconnect in parallel
-        const reconnectPromises = saved.map(device => 
+        const reconnectPromises = saved.map(device =>
             this.attemptReconnect(device)
         );
 
         const results = await Promise.allSettled(reconnectPromises);
-        
+
         const successCount = results.filter(r => r.status === 'fulfilled' && r.value).length;
         const failCount = results.length - successCount;
 
         if (successCount > 0) {
-            console.log(`✅ Reconnected ${successCount} device(s)`);
+            console.log(`Reconnected ${successCount} device(s)`);
         }
         if (failCount > 0) {
-            console.warn(`⚠️ Failed to reconnect ${failCount} device(s)`);
+            console.warn(`Failed to reconnect ${failCount} device(s)`);
         }
 
-        // Update UI
         this.onDidChangeDevicesEmitter.fire();
     }
 
     /**
-     * Attempt to reconnect a single device
+     * 尝试重连单个设备
      */
     private async attemptReconnect(savedDevice: SavedWirelessDevice): Promise<boolean> {
         const endpoint = `${savedDevice.ipAddress}:${savedDevice.port}`;
-        
+
         try {
-            // Attempt connection with short timeout
-            await execAsync(`"${this.adbPath}" connect ${endpoint}`, { 
-                timeout: 5000 
+            await execAsync(`"${this.adbPath}" connect ${endpoint}`, {
+                timeout: 5000
             });
 
-            console.log(`✅ Reconnected: ${endpoint}`);
+            console.log(`Reconnected: ${endpoint}`);
             return true;
 
         } catch (error: any) {
-            console.warn(`⚠️ Failed to reconnect ${endpoint}: ${error.message}`);
+            console.warn(`Failed to reconnect ${endpoint}: ${error.message}`);
             return false;
         }
     }
 
     /**
-     * Detect connection type based on port number
+     * 根据端口号判断连接类型
      */
     private detectConnectionType(port: number): 'wireless-debug' | 'tcpip' {
-        // Port 5555 is default for TCP/IP
-        // Ports above 30000 are usually Wireless Debugging
         return port === 5555 ? 'tcpip' : 'wireless-debug';
     }
 
     /**
-     * ═══════════════════════════════════════════════════════
-     *  DEVICE MANAGEMENT
-     * ═══════════════════════════════════════════════════════
-     */
-
-
-    /**
-     * Disconnect a wireless device
+     * 断开无线设备
      */
     async disconnectDevice(device: WirelessDevice): Promise<void> {
         const endpoint = `${device.ipAddress}:${device.port}`;
-        
+
         try {
             await execAsync(`"${this.adbPath}" disconnect ${endpoint}`);
-            
-            // Remove from list
+
             this.wirelessDevices = this.wirelessDevices.filter(d => d.id !== device.id);
-            
-            vscode.window.showInformationMessage(`✅ Disconnected: ${device.model || endpoint}`);
+
+            vscode.window.showInformationMessage(`已断开: ${device.model || endpoint}`);
             this.onDidChangeDevicesEmitter.fire();
         } catch (error: any) {
-            vscode.window.showErrorMessage(`❌ Failed to disconnect: ${error.message}`);
+            vscode.window.showErrorMessage(`断开失败: ${error.message}`);
         }
     }
 
     /**
-     * Get list of connected wireless devices
+     * 获取已连接的无线设备列表
      */
     getWirelessDevices(): WirelessDevice[] {
         return this.wirelessDevices;
     }
 
     /**
-     * Refresh wireless device list
+     * 刷新无线设备列表
      */
     async refreshWirelessDevices(): Promise<void> {
         try {
             const { stdout } = await execAsync(`"${this.adbPath}" devices -l`);
             const lines = stdout.split('\n');
-            
+
             this.wirelessDevices = [];
-            
+
             for (const line of lines) {
                 if (line && !line.startsWith('List of devices') && line.trim()) {
-                    // Look for wireless devices (contain :)
                     if (line.includes(':')) {
                         const parts = line.split(/\s+/);
                         if (parts.length >= 2) {
                             const endpoint = parts[0];
                             const [ip, port] = endpoint.split(':');
-                            
-                            // Extract additional info
+
                             const modelMatch = line.match(/model:([^\s]+)/);
                             const productMatch = line.match(/product:([^\s]+)/);
                             const deviceMatch = line.match(/device:([^\s]+)/);
-                            
+
                             const portNumber = parseInt(port);
                             const device: WirelessDevice = {
                                 id: endpoint,
                                 type: 'device',
                                 state: parts[1] as any,
-                                connectionType: this.detectConnectionType(portNumber), // Auto-detect
+                                connectionType: this.detectConnectionType(portNumber),
                                 ipAddress: ip,
                                 port: portNumber,
                                 model: modelMatch ? modelMatch[1].replace(/_/g, ' ') : undefined,
@@ -346,10 +319,9 @@ export class WirelessADBManager {
                                 device: deviceMatch ? deviceMatch[1] : undefined,
                                 lastConnected: Date.now()
                             };
-                            
+
                             this.wirelessDevices.push(device);
 
-                            // Auto-save device if connected
                             if (device.state === 'device') {
                                 await this.addSavedDevice(device);
                             }
@@ -357,7 +329,7 @@ export class WirelessADBManager {
                     }
                 }
             }
-            
+
             this.onDidChangeDevicesEmitter.fire();
         } catch (error) {
             console.error('Failed to refresh wireless devices:', error);

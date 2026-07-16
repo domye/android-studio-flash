@@ -13,7 +13,7 @@ const execAsync = promisify(exec);
 export type LogcatFilterMode = 'all' | 'app' | 'tag';
 
 /**
- * Manages Android Logcat output with filtering and formatting capabilities.
+ * 管理 Android Logcat 输出，支持过滤和格式化。
  */
 export class LogcatManager {
     private outputChannel: vscode.LogOutputChannel;
@@ -23,7 +23,7 @@ export class LogcatManager {
     private currentFilterMode: LogcatFilterMode = 'app';
     private currentPackageName: string = '';
     private currentTag: string = '';
-    private useGrepFilter: boolean = false; // For code-level filtering if --pid doesn't work
+    private useGrepFilter: boolean = false;
 
     constructor(private deviceManager: DeviceManager, sdkManager?: AndroidSDKManager) {
         this.outputChannel = vscode.window.createOutputChannel('Android Logcat', { log: true });
@@ -31,7 +31,7 @@ export class LogcatManager {
     }
 
     /**
-     * Find the Android project root directory.
+     * 查找 Android 项目根目录
      */
     private findProjectRoot(): string | undefined {
         const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
@@ -64,20 +64,18 @@ export class LogcatManager {
     }
 
     /**
-     * Show Logcat with filtering
+     * 显示 Logcat（可指定过滤模式）
      */
     async showLogcat(filterMode?: LogcatFilterMode, packageName?: string, tag?: string): Promise<void> {
         const selectedDevice = this.deviceManager.getSelectedDevice();
-        
+
         if (!selectedDevice) {
-            vscode.window.showWarningMessage('⚠️ Please select a device first');
+            vscode.window.showWarningMessage('请先选择设备');
             return;
         }
 
-        // Stop previous process if exists
         this.stopLogcat();
 
-        // Set filter mode
         if (filterMode) {
             this.currentFilterMode = filterMode;
         }
@@ -90,11 +88,10 @@ export class LogcatManager {
             this.currentTag = tag;
         }
 
-        // If mode is "app" and no package name
+        // 若为 app 模式且无包名，自动检测
         if (this.currentFilterMode === 'app' && !this.currentPackageName) {
             const projectRoot = this.findProjectRoot();
 
-            // Use smart detection system to get all sources
             const detectionResults = await PackageNameDetector.detectPackageNameSmart(
                 this.sdkManager.getADBPath(),
                 selectedDevice.id,
@@ -102,28 +99,26 @@ export class LogcatManager {
             );
 
             if (detectionResults.length === 0) {
-                vscode.window.showWarningMessage('⚠️ Package Name not found. Manual input required.');
+                vscode.window.showWarningMessage('未找到包名。需要手动输入。');
                 const input = await vscode.window.showInputBox({
-                    prompt: 'Enter application Package Name',
+                    prompt: '输入应用包名',
                     placeHolder: 'com.example.app'
                 });
-                
+
                 if (!input) {
                     return;
                 }
-                
+
                 this.currentPackageName = input;
             } else {
-                // Show all results to user
                 const selectedPackage = await PackageNameDetector.promptForPackageName(detectionResults);
 
                 if (!selectedPackage) {
-                    return; // User cancelled
+                    return;
                 }
 
                 this.currentPackageName = selectedPackage;
-                
-                // Show selected source
+
                 const selected = detectionResults.find(r => r.packageName === selectedPackage);
                 if (selected) {
                     const sourceNames = {
@@ -133,15 +128,15 @@ export class LogcatManager {
                         manifest: 'AndroidManifest.xml',
                         device: 'Device'
                     };
-                    console.log(`✅ Using package: ${selectedPackage} (from ${sourceNames[selected.source]})`);
+                    console.log(`Using package: ${selectedPackage} (from ${sourceNames[selected.source]})`);
                 }
             }
         }
 
-        // If mode is "tag" and no tag, ask user
+        // 若为 tag 模式且无标签，询问用户
         if (this.currentFilterMode === 'tag' && !this.currentTag) {
             const input = await vscode.window.showInputBox({
-                prompt: 'Enter TAG to filter',
+                prompt: '输入要过滤的 TAG',
                 placeHolder: 'MyApp'
             });
 
@@ -156,15 +151,14 @@ export class LogcatManager {
 
         try {
             const adbPath = this.sdkManager.getADBPath();
-            
-            this.outputChannel.clear();
-            this.outputChannel.appendLine('━'.repeat(80));
-            this.outputChannel.appendLine(`📱 Device: ${selectedDevice.model || selectedDevice.id}`);
-            this.outputChannel.appendLine(`🔍 Filter Mode: ${this.getFilterModeLabel()}`);
-            this.outputChannel.appendLine('━'.repeat(80));
 
-            // Build command based on filter mode (now async)
-            this.useGrepFilter = false; // reset
+            this.outputChannel.clear();
+            this.outputChannel.appendLine('='.repeat(80));
+            this.outputChannel.appendLine(`设备: ${selectedDevice.model || selectedDevice.id}`);
+            this.outputChannel.appendLine(`过滤模式: ${this.getFilterModeLabel()}`);
+            this.outputChannel.appendLine('='.repeat(80));
+
+            this.useGrepFilter = false;
             const logcatArgs = await this.buildLogcatArgs(selectedDevice.id);
 
             this.logcatProcess = spawn(adbPath, logcatArgs);
@@ -174,9 +168,7 @@ export class LogcatManager {
                 const lines = data.toString().split('\n');
                 lines.forEach(line => {
                     if (line.trim()) {
-                        // If using grep filter (app not running)
                         if (this.useGrepFilter && this.currentPackageName) {
-                            // Filter lines containing package name
                             if (line.includes(this.currentPackageName)) {
                                 this.logFormattedLine(line);
                             }
@@ -189,17 +181,17 @@ export class LogcatManager {
 
             this.logcatProcess.on('close', () => {
                 this.isRunning = false;
-                this.outputChannel.appendLine('━'.repeat(80));
-                this.outputChannel.appendLine('Logcat ended');
+                this.outputChannel.appendLine('='.repeat(80));
+                this.outputChannel.appendLine('Logcat 已结束');
             });
 
         } catch (error: any) {
-            vscode.window.showErrorMessage(`❌ Failed to start Logcat: ${error.message}`);
+            vscode.window.showErrorMessage(`启动 Logcat 失败: ${error.message}`);
         }
     }
 
     /**
-     * Build logcat arguments based on filter mode
+     * 根据过滤模式构建 logcat 参数
      */
     private async buildLogcatArgs(deviceId: string): Promise<string[]> {
         const args = ['-s', deviceId, 'logcat', '-v', 'time'];
@@ -208,26 +200,23 @@ export class LogcatManager {
             case 'app':
                 if (this.currentPackageName) {
                     try {
-                        // Get PID from device
                         const adbPath = this.sdkManager.getADBPath();
-                        
+
                         const { stdout } = await execAsync(
                             `"${adbPath}" -s ${deviceId} shell "pidof -s ${this.currentPackageName}"`
                         );
-                        
+
                         const pid = stdout.trim();
-                        
+
                         if (pid && pid !== '') {
-                            console.log(`✅ Found PID for ${this.currentPackageName}: ${pid}`);
+                            console.log(`Found PID for ${this.currentPackageName}: ${pid}`);
                             args.push('--pid', pid);
                         } else {
-                            console.log(`⚠️ App ${this.currentPackageName} is not running. Showing all logs with grep filter instead.`);
-                            // Alternative: use grep for filtering
-                            // We'll use normal logcat and filter in code
+                            console.log(`App ${this.currentPackageName} is not running. Using grep filter instead.`);
                             this.useGrepFilter = true;
                         }
                     } catch (error) {
-                        console.log(`⚠️ Could not get PID. App may not be running. Will show all logs.`);
+                        console.log(`Could not get PID. App may not be running.`);
                         this.useGrepFilter = true;
                     }
                 }
@@ -235,7 +224,6 @@ export class LogcatManager {
 
             case 'tag':
                 if (this.currentTag) {
-                    // Filter by TAG
                     args.push('-s');
                     args.push(`${this.currentTag}:*`);
                 }
@@ -243,7 +231,6 @@ export class LogcatManager {
 
             case 'all':
             default:
-                // No filtering - all logs
                 break;
         }
 
@@ -251,66 +238,64 @@ export class LogcatManager {
     }
 
     /**
-     * Get filter mode label
+     * 获取过滤模式标签
      */
     private getFilterModeLabel(): string {
         switch (this.currentFilterMode) {
             case 'all':
-                return 'All Logs';
+                return '所有日志';
             case 'app':
-                return `App Only: ${this.currentPackageName}`;
+                return `仅应用: ${this.currentPackageName}`;
             case 'tag':
-                return `Tag Filter: ${this.currentTag}`;
+                return `TAG 过滤: ${this.currentTag}`;
             default:
-                return 'Unknown';
+                return '未知';
         }
     }
 
     /**
-     * Toggle filter mode
+     * 切换过滤模式
      */
     async toggleFilterMode(): Promise<void> {
         const modes: { label: string; mode: LogcatFilterMode; description: string }[] = [
             {
-                label: '$(package) App Only',
+                label: '仅应用',
                 mode: 'app',
-                description: 'Show app logs only (like Android Studio)'
+                description: '仅显示应用日志（类似 Android Studio）'
             },
             {
-                label: '$(list-tree) All Logs',
+                label: '所有日志',
                 mode: 'all',
-                description: 'Show all logs from device'
+                description: '显示设备所有日志'
             },
             {
-                label: '$(tag) Tag Filter',
+                label: '按 TAG 过滤',
                 mode: 'tag',
-                description: 'Filter by specific TAG'
+                description: '按指定 TAG 过滤'
             }
         ];
 
         const selected = await vscode.window.showQuickPick(modes, {
-            placeHolder: 'Select filter mode'
+            placeHolder: '选择过滤模式'
         });
 
         if (selected) {
             this.currentFilterMode = selected.mode;
-            
-            // Restart Logcat with new mode
+
             if (this.isRunning) {
                 await this.showLogcat();
             } else {
-                vscode.window.showInformationMessage(`✅ Filter mode changed to: ${selected.label}`);
+                vscode.window.showInformationMessage(`过滤模式已切换为: ${selected.label}`);
             }
         }
     }
 
     /**
-     * Print line with appropriate log level
+     * 根据日志级别格式化输出
      */
     private logFormattedLine(line: string): void {
         const formattedLine = this.formatLogLine(line);
-        
-        // Determine level from line for correct log method usage
+
         if (line.includes(' E/') || line.includes('ERROR')) {
             this.outputChannel.error(formattedLine);
         } else if (line.includes(' W/') || line.includes('WARNING')) {
@@ -318,133 +303,85 @@ export class LogcatManager {
         } else if (line.includes(' I/') || line.includes('INFO')) {
             this.outputChannel.info(formattedLine);
         } else {
-            // DEBUG, VERBOSE, etc.
             this.outputChannel.trace(formattedLine);
         }
     }
 
     /**
-     * Format log line with icons and highlighting
+     * 格式化日志行，添加级别标识
      */
     private formatLogLine(line: string): string {
-        // Parse Logcat format
-        // Format: 01-17 23:10:45.123 D/TagName(12345): Message
         const logLevelMatch = line.match(/(\d{2}-\d{2}\s+)?(\d{2}:\d{2}:\d{2}\.\d+)\s+([VDIWEF])\/([^(]+)\((\d+)\):\s+(.+)/);
-        
+
         if (logLevelMatch) {
             const [, , time, level, tag, pid, message] = logLevelMatch;
-            
-            // Shorten time (remove extra milliseconds)
-            const shortTime = time.substring(0, 12); // HH:MM:SS.mmm
-            
-            let icon = '○';
+
+            const shortTime = time.substring(0, 12);
+
             let levelName = '';
-            
+
             switch (level) {
-                case 'E': // Error
-                    icon = '❌';
+                case 'E':
                     levelName = 'ERROR';
                     break;
-                    
-                case 'W': // Warning
-                    icon = '⚠️';
+                case 'W':
                     levelName = 'WARN';
                     break;
-                    
-                case 'I': // Info
-                    icon = 'ℹ️';
+                case 'I':
                     levelName = 'INFO';
                     break;
-                    
-                case 'D': // Debug
-                    icon = '🔍';
+                case 'D':
                     levelName = 'DEBUG';
                     break;
-                    
-                case 'V': // Verbose
-                    icon = '💬';
+                case 'V':
                     levelName = 'VERB';
                     break;
-                    
-                case 'F': // Fatal/Assert
-                    icon = '💀';
+                case 'F':
                     levelName = 'FATAL';
                     break;
-                    
                 default:
                     return line;
             }
-            
-            // Highlight critical words in message
-            const highlightedMessage = this.highlightCriticalWords(message);
-            
-            // Detect Stack Traces
-            const isStackTrace = message.trim().startsWith('at ') || 
+
+            const isStackTrace = message.trim().startsWith('at ') ||
                                 message.includes('Exception') ||
                                 message.includes('Error:');
-            
-            const prefix = isStackTrace ? '  ↪ ' : '';
-            
-            // Enhanced formatting with clear separators
-            const formattedLine = [
+
+            const prefix = isStackTrace ? '  -> ' : '';
+
+            return [
                 shortTime,
-                icon,
                 levelName.padEnd(5),
-                '│',
-                tag.trim().padEnd(25), // Full TAG (25 chars)
-                '│',
+                '|',
+                tag.trim().padEnd(25),
+                '|',
                 `(${pid.padStart(5)})`,
-                '│',
-                prefix + highlightedMessage
+                '|',
+                prefix + message
             ].join(' ');
-            
-            return formattedLine;
         }
-        
-        // If we can't parse, return as-is
+
         return line;
     }
 
     /**
-     * Highlight critical words in message
-     */
-    private highlightCriticalWords(message: string): string {
-        // Critical words
-        const criticalWords = [
-            'crash', 'exception', 'error', 'fatal', 'killed',
-            'nullpointer', 'outofmemory', 'stackoverflow',
-            'failed', 'timeout', 'denied', 'forbidden'
-        ];
-        
-        let highlighted = message;
-        
-        // Add ⚡ marker before critical words
-        criticalWords.forEach(word => {
-            const regex = new RegExp(`\\b${word}\\b`, 'gi');
-            highlighted = highlighted.replace(regex, match => `⚡${match}⚡`);
-        });
-        
-        return highlighted;
-    }
-
-    /**
-     * Clear Logcat output
+     * 清空 Logcat 输出
      */
     clearLogcat(): void {
         this.outputChannel.clear();
-        this.outputChannel.appendLine('🗑️ Logcat cleared');
-        
+        this.outputChannel.appendLine('Logcat 已清空');
+
         const selectedDevice = this.deviceManager.getSelectedDevice();
         if (selectedDevice && this.isRunning) {
-            this.outputChannel.appendLine('━'.repeat(80));
-            this.outputChannel.appendLine(`📱 Device: ${selectedDevice.model || selectedDevice.id}`);
-            this.outputChannel.appendLine(`🔍 Filter Mode: ${this.getFilterModeLabel()}`);
-            this.outputChannel.appendLine('━'.repeat(80));
+            this.outputChannel.appendLine('='.repeat(80));
+            this.outputChannel.appendLine(`设备: ${selectedDevice.model || selectedDevice.id}`);
+            this.outputChannel.appendLine(`过滤模式: ${this.getFilterModeLabel()}`);
+            this.outputChannel.appendLine('='.repeat(80));
         }
     }
 
     /**
-     * Stop Logcat
+     * 停止 Logcat
      */
     stopLogcat(): void {
         if (this.logcatProcess) {
@@ -455,7 +392,7 @@ export class LogcatManager {
     }
 
     /**
-     * Get current filter mode
+     * 获取当前过滤模式
      */
     getCurrentFilterMode(): LogcatFilterMode {
         return this.currentFilterMode;

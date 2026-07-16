@@ -8,33 +8,32 @@ import { promisify } from 'util';
 const execAsync = promisify(exec);
 
 /**
- * Certificate information for keystore generation
+ * 证书信息，用于生成 keystore
  */
 export interface CertificateInfo {
     alias: string;
     keyPassword: string;
     storePassword: string;
-    validity: number; // days
-    cn: string;  // Common Name (Your Name)
-    ou: string;  // Organizational Unit
-    o: string;   // Organization
-    l: string;   // City/Locality
-    st: string;  // State/Province
-    c: string;   // Country Code (2 letters)
+    validity: number; // 天数
+    cn: string;  // 姓名
+    ou: string;  // 部门
+    o: string;   // 组织
+    l: string;   // 城市
+    st: string;  // 省份
+    c: string;   // 国家代码（2 位）
 }
 
 /**
- * Keystore configuration saved in workspace
+ * 保存在工作区中的 keystore 配置
  */
 export interface KeystoreConfig {
     keystorePath: string;
     keyAlias: string;
-    // Passwords are stored separately in VS Code's SecretStorage
 }
 
 /**
- * Manages Android keystore creation and signing operations.
- * Uses keytool from JDK to generate keystores.
+ * 管理 Android keystore 创建和签名操作。
+ * 使用 JDK 的 keytool 生成 keystore。
  */
 export class KeystoreManager {
     private readonly KEYSTORE_CONFIG_KEY = 'android.signing.keystore';
@@ -44,13 +43,13 @@ export class KeystoreManager {
     constructor(private context: vscode.ExtensionContext) {}
 
     /**
-     * Find keytool executable from JAVA_HOME or common JDK locations
+     * 从 JAVA_HOME 或常见 JDK 位置查找 keytool
      */
     async getKeytoolPath(): Promise<string> {
         const isWindows = os.platform() === 'win32';
         const keytoolName = isWindows ? 'keytool.exe' : 'keytool';
 
-        // 1. Try JAVA_HOME environment variable
+        // 1. 尝试 JAVA_HOME
         const javaHome = process.env.JAVA_HOME;
         if (javaHome) {
             const keytoolPath = path.join(javaHome, 'bin', keytoolName);
@@ -59,7 +58,7 @@ export class KeystoreManager {
             }
         }
 
-        // 2. Try to find from PATH (keytool might be in PATH)
+        // 2. 尝试从 PATH 查找
         try {
             const { stdout } = await execAsync(isWindows ? 'where keytool' : 'which keytool');
             const foundPath = stdout.trim().split('\n')[0];
@@ -67,10 +66,10 @@ export class KeystoreManager {
                 return foundPath;
             }
         } catch {
-            // Not in PATH, continue searching
+            // 不在 PATH 中
         }
 
-        // 3. Common JDK installation paths
+        // 3. 常见 JDK 安装路径
         const commonPaths = this.getCommonJDKPaths();
         for (const jdkPath of commonPaths) {
             const keytoolPath = path.join(jdkPath, 'bin', keytoolName);
@@ -80,15 +79,15 @@ export class KeystoreManager {
         }
 
         throw new Error(
-            'keytool not found!\n\n' +
-            'Please ensure JDK is installed and either:\n' +
-            '• Set JAVA_HOME environment variable\n' +
-            '• Add JDK bin folder to PATH'
+            '未找到 keytool！\n\n' +
+            '请确保已安装 JDK，并执行以下操作之一：\n' +
+            '  - 设置 JAVA_HOME 环境变量\n' +
+            '  - 将 JDK bin 目录添加到 PATH'
         );
     }
 
     /**
-     * Get common JDK installation paths
+     * 获取常见 JDK 安装路径
      */
     private getCommonJDKPaths(): string[] {
         const platform = os.platform();
@@ -96,9 +95,7 @@ export class KeystoreManager {
 
         if (platform === 'win32') {
             return [
-                // Android Studio embedded JDK
                 path.join(homeDir, 'AppData', 'Local', 'Android', 'Sdk', 'jbr'),
-                // Common Oracle/OpenJDK locations
                 'C:\\Program Files\\Java\\jdk-21',
                 'C:\\Program Files\\Java\\jdk-17',
                 'C:\\Program Files\\Java\\jdk-11',
@@ -122,12 +119,11 @@ export class KeystoreManager {
     }
 
     /**
-     * Create a new keystore with user wizard
+     * 通过向导创建新的 keystore
      */
     async createKeystore(): Promise<string | null> {
-        // Step 1: Ask for keystore file location
         const saveUri = await vscode.window.showSaveDialog({
-            title: 'Save Keystore As',
+            title: '保存 Keystore 为',
             defaultUri: vscode.Uri.file(
                 path.join(
                     vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir(),
@@ -135,7 +131,7 @@ export class KeystoreManager {
                 )
             ),
             filters: {
-                'Java Keystore': ['jks', 'keystore'],
+                'Java 密钥库': ['jks', 'keystore'],
             }
         });
 
@@ -145,17 +141,14 @@ export class KeystoreManager {
 
         const keystorePath = saveUri.fsPath;
 
-        // Step 2: Collect certificate information
         const certInfo = await this.collectCertificateInfo();
         if (!certInfo) {
             return null;
         }
 
-        // Step 3: Generate keystore using keytool
         try {
             await this.generateKeystore(keystorePath, certInfo);
-            
-            // Step 4: Save configuration
+
             await this.saveKeystoreConfig({
                 keystorePath,
                 keyAlias: certInfo.alias
@@ -163,125 +156,116 @@ export class KeystoreManager {
             await this.savePasswords(certInfo.storePassword, certInfo.keyPassword);
 
             vscode.window.showInformationMessage(
-                `✅ Keystore created successfully!\n\n` +
-                `📁 Location: ${keystorePath}\n` +
-                `🔑 Alias: ${certInfo.alias}\n\n` +
-                `⚠️ Keep your passwords safe! They are stored securely in VS Code.`
+                `Keystore 创建成功！\n\n` +
+                `位置: ${keystorePath}\n` +
+                `别名: ${certInfo.alias}\n\n` +
+                `请妥善保管密码！密码已安全存储在 VS Code 中。`
             );
 
             return keystorePath;
 
         } catch (error: any) {
-            vscode.window.showErrorMessage(`❌ Failed to create keystore: ${error.message}`);
+            vscode.window.showErrorMessage(`创建 keystore 失败: ${error.message}`);
             return null;
         }
     }
 
     /**
-     * Collect certificate information from user
+     * 收集用户输入的证书信息
      */
     private async collectCertificateInfo(): Promise<CertificateInfo | null> {
-        // Key Alias
         const alias = await vscode.window.showInputBox({
-            title: 'Key Alias (1/8)',
-            prompt: 'Enter a unique name for this key',
+            title: '密钥别名 (1/8)',
+            prompt: '为此密钥输入唯一名称',
             value: 'release-key',
-            validateInput: v => v.trim() ? null : 'Alias is required'
+            validateInput: v => v.trim() ? null : '必须填写别名'
         });
         if (!alias) return null;
 
-        // Store Password
         const storePassword = await vscode.window.showInputBox({
-            title: 'Keystore Password (2/8)',
-            prompt: 'Enter password for the keystore (min 6 characters)',
+            title: 'Keystore 密码 (2/8)',
+            prompt: '输入 keystore 密码（至少 6 个字符）',
             password: true,
-            validateInput: v => v.length >= 6 ? null : 'Password must be at least 6 characters'
+            validateInput: v => v.length >= 6 ? null : '密码长度至少 6 个字符'
         });
         if (!storePassword) return null;
 
-        // Confirm Store Password
         const storePasswordConfirm = await vscode.window.showInputBox({
-            title: 'Confirm Keystore Password (3/8)',
-            prompt: 'Re-enter the keystore password',
+            title: '确认 Keystore 密码 (3/8)',
+            prompt: '重新输入 keystore 密码',
             password: true,
-            validateInput: v => v === storePassword ? null : 'Passwords do not match'
+            validateInput: v => v === storePassword ? null : '密码不匹配'
         });
         if (!storePasswordConfirm) return null;
 
-        // Key Password (can be same as store password)
         const usesSamePassword = await vscode.window.showQuickPick(
             [
-                { label: 'Yes', description: 'Use same password for key', value: true },
-                { label: 'No', description: 'Set different password for key', value: false }
+                { label: '是', description: '密钥使用相同密码', value: true },
+                { label: '否', description: '为密钥设置不同密码', value: false }
             ],
-            { title: 'Key Password (4/8)', placeHolder: 'Use same password as keystore?' }
+            { title: '密钥密码 (4/8)', placeHolder: '使用与 keystore 相同的密码？' }
         );
         if (!usesSamePassword) return null;
 
         let keyPassword = storePassword;
         if (!usesSamePassword.value) {
             const customKeyPassword = await vscode.window.showInputBox({
-                title: 'Key Password',
-                prompt: 'Enter password for the key (min 6 characters)',
+                title: '密钥密码',
+                prompt: '输入密钥密码（至少 6 个字符）',
                 password: true,
-                validateInput: v => v.length >= 6 ? null : 'Password must be at least 6 characters'
+                validateInput: v => v.length >= 6 ? null : '密码长度至少 6 个字符'
             });
             if (!customKeyPassword) return null;
             keyPassword = customKeyPassword;
         }
 
-        // Common Name (Your Name)
         const cn = await vscode.window.showInputBox({
-            title: 'Your Name (5/8)',
-            prompt: 'Enter your name or organization name',
+            title: '姓名 (5/8)',
+            prompt: '输入你的姓名或组织名称',
             value: 'Developer',
-            validateInput: v => v.trim() ? null : 'Name is required'
+            validateInput: v => v.trim() ? null : '必须填写姓名'
         });
         if (!cn) return null;
 
-        // Organization
         const o = await vscode.window.showInputBox({
-            title: 'Organization (6/8)',
-            prompt: 'Enter your company or organization name (optional)',
+            title: '组织 (6/8)',
+            prompt: '输入你的公司或组织名称（可选）',
             value: ''
         }) || '';
 
-        // City
         const l = await vscode.window.showInputBox({
-            title: 'City (7/8)',
-            prompt: 'Enter your city (optional)',
+            title: '城市 (7/8)',
+            prompt: '输入城市（可选）',
             value: ''
         }) || '';
 
-        // Country Code
         const c = await vscode.window.showInputBox({
-            title: 'Country Code (8/8)',
-            prompt: 'Enter 2-letter country code (e.g., US, EG, SA)',
+            title: '国家代码 (8/8)',
+            prompt: '输入两位字母国家代码（如 CN, US, JP）',
             value: '',
-            validateInput: v => !v || /^[A-Za-z]{2}$/.test(v) ? null : 'Must be 2 letters'
+            validateInput: v => !v || /^[A-Za-z]{2}$/.test(v) ? null : '必须为 2 个字母'
         }) || '';
 
         return {
             alias,
             storePassword,
             keyPassword,
-            validity: 10000, // ~27 years
+            validity: 10000,
             cn,
-            ou: '', // Optional: Organizational Unit
+            ou: '',
             o,
             l,
-            st: '', // Optional: State
+            st: '',
             c
         };
     }
 
     /**
-     * Generate keystore using keytool command
+     * 使用 keytool 命令生成 keystore
      */
     private async generateKeystore(keystorePath: string, cert: CertificateInfo): Promise<void> {
         const keytool = await this.getKeytoolPath();
 
-        // Build Distinguished Name (DN)
         const dnParts: string[] = [];
         if (cert.cn) dnParts.push(`CN=${cert.cn}`);
         if (cert.ou) dnParts.push(`OU=${cert.ou}`);
@@ -291,7 +275,6 @@ export class KeystoreManager {
         if (cert.c) dnParts.push(`C=${cert.c}`);
         const dname = dnParts.join(', ');
 
-        // Build keytool command
         const command = [
             `"${keytool}"`,
             '-genkeypair',
@@ -308,7 +291,7 @@ export class KeystoreManager {
 
         await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
-            title: '🔐 Generating keystore...',
+            title: '正在生成 keystore...',
             cancellable: false
         }, async () => {
             await execAsync(command);
@@ -316,21 +299,21 @@ export class KeystoreManager {
     }
 
     /**
-     * Save keystore configuration to workspace state
+     * 保存 keystore 配置到工作区状态
      */
     async saveKeystoreConfig(config: KeystoreConfig): Promise<void> {
         await this.context.workspaceState.update(this.KEYSTORE_CONFIG_KEY, config);
     }
 
     /**
-     * Load keystore configuration from workspace state
+     * 从工作区状态加载 keystore 配置
      */
     getKeystoreConfig(): KeystoreConfig | undefined {
         return this.context.workspaceState.get<KeystoreConfig>(this.KEYSTORE_CONFIG_KEY);
     }
 
     /**
-     * Save passwords securely using VS Code's SecretStorage
+     * 使用 VS Code SecretStorage 安全保存密码
      */
     async savePasswords(storePassword: string, keyPassword: string): Promise<void> {
         await this.context.secrets.store(this.STORE_PASSWORD_KEY, storePassword);
@@ -338,12 +321,12 @@ export class KeystoreManager {
     }
 
     /**
-     * Get saved passwords from SecretStorage
+     * 从 SecretStorage 获取密码
      */
     async getPasswords(): Promise<{ storePassword: string; keyPassword: string } | null> {
         const storePassword = await this.context.secrets.get(this.STORE_PASSWORD_KEY);
         const keyPassword = await this.context.secrets.get(this.KEY_PASSWORD_KEY);
-        
+
         if (!storePassword || !keyPassword) {
             return null;
         }
@@ -352,7 +335,7 @@ export class KeystoreManager {
     }
 
     /**
-     * Check if signing is configured for this workspace
+     * 检查当前工作区是否已配置签名
      */
     isSigningConfigured(): boolean {
         const config = this.getKeystoreConfig();
@@ -360,7 +343,7 @@ export class KeystoreManager {
     }
 
     /**
-     * Clear saved signing configuration
+     * 清除已保存的签名配置
      */
     async clearSigningConfig(): Promise<void> {
         await this.context.workspaceState.update(this.KEYSTORE_CONFIG_KEY, undefined);
@@ -369,17 +352,17 @@ export class KeystoreManager {
     }
 
     /**
-     * Select existing keystore file
+     * 选择已有的 keystore 文件
      */
     async selectExistingKeystore(): Promise<string | null> {
         const uri = await vscode.window.showOpenDialog({
-            title: 'Select Keystore File',
+            title: '选择 Keystore 文件',
             canSelectFiles: true,
             canSelectFolders: false,
             canSelectMany: false,
             filters: {
-                'Java Keystore': ['jks', 'keystore'],
-                'All Files': ['*']
+                'Java 密钥库': ['jks', 'keystore'],
+                '所有文件': ['*']
             }
         });
 
@@ -389,41 +372,37 @@ export class KeystoreManager {
 
         const keystorePath = uri[0].fsPath;
 
-        // Ask for alias
         const alias = await vscode.window.showInputBox({
-            title: 'Key Alias',
-            prompt: 'Enter the key alias used in this keystore',
-            validateInput: v => v.trim() ? null : 'Alias is required'
+            title: '密钥别名',
+            prompt: '输入此 keystore 中使用的密钥别名',
+            validateInput: v => v.trim() ? null : '必须填写别名'
         });
 
         if (!alias) {
             return null;
         }
 
-        // Ask for store password
         const storePassword = await vscode.window.showInputBox({
-            title: 'Keystore Password',
-            prompt: 'Enter the keystore password',
+            title: 'Keystore 密码',
+            prompt: '输入 keystore 密码',
             password: true,
-            validateInput: v => v ? null : 'Password is required'
+            validateInput: v => v ? null : '必须填写密码'
         });
 
         if (!storePassword) {
             return null;
         }
 
-        // Ask for key password
         const keyPassword = await vscode.window.showInputBox({
-            title: 'Key Password',
-            prompt: 'Enter the key password (or leave empty if same as keystore password)',
+            title: '密钥密码',
+            prompt: '输入密钥密码（留空表示与 keystore 密码相同）',
             password: true
         });
 
-        // Save configuration
         await this.saveKeystoreConfig({ keystorePath, keyAlias: alias });
         await this.savePasswords(storePassword, keyPassword || storePassword);
 
-        vscode.window.showInformationMessage(`✅ Keystore configured: ${path.basename(keystorePath)}`);
+        vscode.window.showInformationMessage(`Keystore 已配置: ${path.basename(keystorePath)}`);
 
         return keystorePath;
     }

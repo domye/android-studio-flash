@@ -7,7 +7,7 @@ import { SigningWizard } from '../signing/SigningWizard';
 import { BuildStatusBar } from '../ui/BuildStatusBar';
 
 /**
- * Manages Android build operations including building, running, and debugging.
+ * 管理 Android 构建操作，包括构建、运行和调试。
  */
 export class BuildSystem {
     private signingWizard: SigningWizard | null = null;
@@ -19,38 +19,38 @@ export class BuildSystem {
     ) {}
 
     /**
-     * Set the signing wizard (injected after construction)
+     * 设置签名向导（构造后注入）
      */
     setSigningWizard(wizard: SigningWizard): void {
         this.signingWizard = wizard;
     }
 
     /**
-     * Build Debug APK
+     * 构建 Debug APK
      */
     async buildDebug(): Promise<void> {
-        this.statusBar?.showBuildStatus('Building Debug APK...');
+        this.statusBar?.showBuildStatus('构建 Debug APK...');
         try {
             await this.gradleService.buildDebug();
             this.statusBar?.update();
             await this.handleBuildResult('debug');
         } catch (error: any) {
             this.statusBar?.update();
-            vscode.window.showErrorMessage(`❌ Build failed: ${error.message}`);
+            vscode.window.showErrorMessage(`构建失败: ${error.message}`);
         }
     }
 
     /**
-     * Build Release APK with signing wizard
+     * 构建 Release APK（含签名向导）
      */
     async buildRelease(): Promise<void> {
-        this.statusBar?.showBuildStatus('Building Release APK...');
+        this.statusBar?.showBuildStatus('构建 Release APK...');
         try {
             if (this.signingWizard) {
                 const result = await this.signingWizard.run();
-                
+
                 if (!result || !result.shouldProceed) {
-                    vscode.window.showInformationMessage('❌ Build cancelled');
+                    vscode.window.showInformationMessage('构建已取消');
                     this.statusBar?.update();
                     return;
                 }
@@ -68,38 +68,38 @@ export class BuildSystem {
             } else {
                 await this.gradleService.buildRelease();
             }
-            
+
             this.statusBar?.update();
             await this.handleBuildResult('release');
         } catch (error: any) {
             this.statusBar?.update();
-            vscode.window.showErrorMessage(`❌ Build failed: ${error.message}`);
+            vscode.window.showErrorMessage(`构建失败: ${error.message}`);
         }
     }
 
 
     /**
-     * Clean project
+     * 清理项目
      */
     async cleanProject(): Promise<void> {
         try {
             await this.gradleService.clean();
-            vscode.window.showInformationMessage('✅ Project cleaned successfully!');
+            vscode.window.showInformationMessage('项目清理成功！');
         } catch (error: any) {
-            vscode.window.showErrorMessage(`❌ Clean failed: ${error.message}`);
+            vscode.window.showErrorMessage(`清理失败: ${error.message}`);
         }
     }
 
     /**
-     * Run app on device
+     * 在设备上运行应用
      */
     async runApp(): Promise<void> {
-        this.statusBar?.showBuildStatus('Building & Running...');
+        this.statusBar?.showBuildStatus('构建并运行...');
         try {
             await this.gradleService.buildDebug();
-            
+
             const apkPath = this.gradleService.getApkPath('debug');
-            
+
             if (!fs.existsSync(apkPath)) {
                 this.statusBar?.update();
                 throw new Error('APK file not found');
@@ -109,52 +109,51 @@ export class BuildSystem {
             this.statusBar?.update();
         } catch (error: any) {
             this.statusBar?.update();
-            vscode.window.showErrorMessage(`❌ Run failed: ${error.message}`);
+            vscode.window.showErrorMessage(`运行失败: ${error.message}`);
         }
     }
 
     /**
-     * Handle post-build result: notify user, install or open folder.
+     * 处理构建后的结果：通知用户，安装或打开文件夹
      */
     private async handleBuildResult(variant: 'debug' | 'release'): Promise<void> {
         const apkPath = this.gradleService.getApkPath(variant);
-        
+
         if (!fs.existsSync(apkPath)) {
-            vscode.window.showWarningMessage('⚠️ APK file not found');
+            vscode.window.showWarningMessage('未找到 APK 文件');
             return;
         }
 
         const action = await vscode.window.showInformationMessage(
-            '✅ APK built successfully!',
-            'Install on device',
-            'Open folder'
+            'APK 构建成功！',
+            '安装到设备',
+            '打开文件夹'
         );
 
-        if (action === 'Install on device') {
+        if (action === '安装到设备') {
             await this.installAndRun(apkPath);
-        } else if (action === 'Open folder') {
+        } else if (action === '打开文件夹') {
             vscode.env.openExternal(vscode.Uri.file(path.dirname(apkPath)));
         }
     }
 
     /**
-     * Debug app on device
+     * 调试应用（尚未实现）
      */
     async debugApp(): Promise<void> {
-        vscode.window.showInformationMessage('🚧 Debug feature is under development...');
-        // TODO: Implement Debug Adapter Protocol
+        vscode.window.showInformationMessage('调试功能正在开发中...');
     }
 
     /**
-     * Install and run APK on device
+     * 在设备上安装并运行 APK
      */
     private async installAndRun(apkPath: string): Promise<void> {
         const selectedDevice = this.deviceManager.getSelectedDevice();
-        
+
         if (!selectedDevice) {
             const devices = this.deviceManager.getDevices();
             if (devices.length === 0) {
-                vscode.window.showWarningMessage('⚠️ No devices connected!');
+                vscode.window.showWarningMessage('没有已连接的设备！');
                 return;
             }
             await this.deviceManager.selectDevice();
@@ -162,17 +161,14 @@ export class BuildSystem {
         }
 
         try {
-            // Install APK
             await this.deviceManager.installApk(apkPath);
 
-            // Get package name
             const packageName = await this.deviceManager.getPackageName(apkPath);
-            
-            // Launch app
-            const activityName = '.MainActivity'; // Default
+
+            const activityName = '.MainActivity'; // 默认 Activity
             await this.deviceManager.launchApp(packageName, activityName);
-            
-            vscode.window.showInformationMessage('✅ App launched successfully!');
+
+            vscode.window.showInformationMessage('应用启动成功！');
 
         } catch (error: any) {
             throw new Error(`Failed to install and run: ${error.message}`);

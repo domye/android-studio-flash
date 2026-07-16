@@ -10,7 +10,7 @@ const execAsync = promisify(exec);
 import { AndroidSDKManager } from './AndroidSDKManager';
 
 /**
- * Service for executing Gradle tasks and managing Android project builds.
+ * 执行 Gradle 任务和管理 Android 项目构建的服务。
  */
 export class GradleService {
     private outputChannel: vscode.OutputChannel;
@@ -22,23 +22,23 @@ export class GradleService {
     }
 
     /**
-     * Find the Android project root directory.
-     * Searches for settings.gradle or build.gradle in root and immediate subdirectories.
+     * 查找 Android 项目根目录。
+     * 在当前工作区和直接子目录中搜索 settings.gradle 或 build.gradle。
      */
     public findProjectRoot(): string {
         const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
         if (!workspaceFolder) {
             throw new Error('No workspace folder found');
         }
-        
+
         const rootPath = workspaceFolder.uri.fsPath;
 
-        // 1. Check if workspace root is the project root
+        // 1. 检查工作区根目录是否是项目根
         if (this.isProjectRoot(rootPath)) {
             return rootPath;
         }
 
-        // 2. Check immediate subdirectories
+        // 2. 检查直接子目录
         try {
             const subdirs = fs.readdirSync(rootPath)
                 .map(name => path.join(rootPath, name))
@@ -53,42 +53,34 @@ export class GradleService {
             console.warn('Error scanning subdirectories:', error);
         }
 
-        // Default to workspace root if no specific android project found
-        // This allows the error to be handled downstream or standard behavior
+        // 若未找到则默认使用工作区根
         return rootPath;
     }
 
     /**
-     * Check if a directory acts as a Gradle project root
+     * 判断目录是否为 Gradle 项目根
      */
     private isProjectRoot(dirPath: string): boolean {
-        // Check for settings.gradle (modern multi-module root)
-        const hasSettings = fs.existsSync(path.join(dirPath, 'settings.gradle')) || 
+        const hasSettings = fs.existsSync(path.join(dirPath, 'settings.gradle')) ||
                            fs.existsSync(path.join(dirPath, 'settings.gradle.kts'));
-        
-        // Check for build.gradle (single module or legacy)
-        const hasBuild = fs.existsSync(path.join(dirPath, 'build.gradle')) || 
+
+        const hasBuild = fs.existsSync(path.join(dirPath, 'build.gradle')) ||
                         fs.existsSync(path.join(dirPath, 'build.gradle.kts'));
 
-        // Check for Gradle wrapper presence (strong indicator)
-        const hasWrapper = fs.existsSync(path.join(dirPath, 'gradlew')) || 
+        const hasWrapper = fs.existsSync(path.join(dirPath, 'gradlew')) ||
                           fs.existsSync(path.join(dirPath, 'gradlew.bat'));
 
-        // A valid root should ideally have build configuration AND a wrapper, 
-        // OR a settings file (which implies structure).
-        // For Telegram/complex apps: settings.gradle is key.
         return (hasSettings || hasBuild) && hasWrapper;
     }
 
     /**
-     * Get Gradle Wrapper path relative to project root
+     * 获取 Gradle Wrapper 路径
      */
     private getGradlewPath(projectRoot: string): string {
         const isWindows = os.platform() === 'win32';
         const wrapperBat = path.join(projectRoot, 'gradlew.bat');
         const wrapperShell = path.join(projectRoot, 'gradlew');
 
-        // On Windows, prefer .bat, but allow shell script (Git Bash etc)
         if (isWindows) {
             if (fs.existsSync(wrapperBat)) {
                 return wrapperBat;
@@ -97,7 +89,6 @@ export class GradleService {
                 return wrapperShell;
             }
         } else {
-            // Unix/Mac
             if (fs.existsSync(wrapperShell)) {
                 return wrapperShell;
             }
@@ -109,77 +100,64 @@ export class GradleService {
     private targetModule: string | null = null;
 
     /**
-     * Set the target module for Gradle tasks
-     * @param module The module name (e.g., ':app') or null for root
+     * 设置目标模块
+     * @param module 模块名（如 ':app'），null 表示根项目
      */
     setTargetModule(module: string | null) {
-        this.targetModule = (module === '(Project Root)') ? null : module;
+        this.targetModule = (module === '(项目根目录)') ? null : module;
     }
 
     /**
-     * Get current target module
+     * 获取当前目标模块
      */
     getTargetModule(): string | null {
         return this.targetModule;
     }
 
     /**
-     * Execute a Gradle task
+     * 执行 Gradle 任务
      */
     async executeGradleTask(task: string, showOutput: boolean = true): Promise<string> {
         try {
             const projectRoot = this.findProjectRoot();
             const gradlew = this.getGradlewPath(projectRoot);
-            
-            // Construct task with module prefix if selected
+
+            // 若设置了模块则添加模块前缀
             let finalTask = task;
             if (this.targetModule && !task.startsWith(':') && !task.includes(' ')) {
-                // Only prefix if task is simple (no spaces/args) and not already prefixed
-                // This covers 'assembleDebug', 'clean', etc.
                 finalTask = `${this.targetModule}:${task}`;
             }
 
             if (showOutput) {
                 this.outputChannel.show(true);
-                this.outputChannel.appendLine(`🔨 Executing: ${finalTask}`);
+                this.outputChannel.appendLine(`正在执行: ${finalTask}`);
                 if (this.targetModule) {
-                     this.outputChannel.appendLine(`🎯 Target Module: ${this.targetModule}`);
+                     this.outputChannel.appendLine(`目标模块: ${this.targetModule}`);
                 }
-                this.outputChannel.appendLine(`📂 Project Root: ${projectRoot}`);
-                this.outputChannel.appendLine('━'.repeat(50));
+                this.outputChannel.appendLine(`项目根目录: ${projectRoot}`);
+                this.outputChannel.appendLine('='.repeat(50));
             }
 
-            // Ensure local.properties exists with correct SDK path
             await this.ensureLocalProperties(projectRoot);
 
-            // Execute command
             let command = `"${gradlew}" ${finalTask}`;
 
-            // Fix for Windows: If using shell script (no .bat), run with bash
+            // Windows 兼容性：若只有 shell 脚本则通过 Java 直接运行
             if (os.platform() === 'win32' && !gradlew.endsWith('.bat')) {
-                // If .bat is missing, we might be in a repo checked out on Windows but without .bat (rare but possible)
-                // OR we are trying to run the shell script.
-                // Running shell script with bash on Windows causes path issues (WSL /mnt/c vs C:\)
-                // especially for local.properties which has Windows paths.
-                
-                // Better approach: Execute the JAR directly using Java
-                // This keeps execution in Windows environment
                 const jarPath = path.join(projectRoot, 'gradle', 'wrapper', 'gradle-wrapper.jar');
                 if (fs.existsSync(jarPath)) {
-                    // Use -cp and explicit main class locally to avoid "no main manifest attribute" error
                     command = `java -Dorg.gradle.appname=gradlew -cp "${jarPath}" org.gradle.wrapper.GradleWrapperMain ${finalTask}`;
-                    this.outputChannel.appendLine(`ℹ️  Running Gradle via Java specific Class (Windows compatibility mode)`);
+                    this.outputChannel.appendLine('通过 Java 运行 Gradle（Windows 兼容模式）');
                 } else {
-                    // Fallback to bash if JAR not found (legacy behavior)
                     await this.ensureUnixLineEndings(gradlew);
                     command = `bash "./gradlew" ${finalTask}`;
                 }
             }
 
             const { stdout, stderr } = await execAsync(command, {
-                cwd: projectRoot, // Important: Run from the submodule/project root
-                maxBuffer: 10 * 1024 * 1024, // 10MB buffer
-                env: { ...process.env, JAVA_HOME: process.env.JAVA_HOME } // Ensure JAVA_HOME is passed
+                cwd: projectRoot,
+                maxBuffer: 10 * 1024 * 1024,
+                env: { ...process.env, JAVA_HOME: process.env.JAVA_HOME }
             });
 
             if (showOutput) {
@@ -187,18 +165,18 @@ export class GradleService {
                     this.outputChannel.appendLine(stdout);
                 }
                 if (stderr) {
-                    this.outputChannel.appendLine('⚠️ Warnings:');
+                    this.outputChannel.appendLine('警告:');
                     this.outputChannel.appendLine(stderr);
                 }
-                this.outputChannel.appendLine('━'.repeat(50));
-                this.outputChannel.appendLine('✅ Task completed successfully!');
+                this.outputChannel.appendLine('='.repeat(50));
+                this.outputChannel.appendLine('任务已完成！');
             }
 
             return stdout;
 
         } catch (error: any) {
-            this.outputChannel.appendLine('━'.repeat(50));
-            this.outputChannel.appendLine('❌ Task failed!');
+            this.outputChannel.appendLine('='.repeat(50));
+            this.outputChannel.appendLine('任务失败！');
             this.outputChannel.appendLine(error.message);
             if (error.stdout) {
                 this.outputChannel.appendLine(error.stdout);
@@ -211,12 +189,12 @@ export class GradleService {
     }
 
     /**
-     * Build Debug APK
+     * 构建 Debug APK
      */
     async buildDebug(): Promise<string> {
         return await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
-            title: '🔨 Building Debug APK...',
+            title: '正在构建 Debug APK...',
             cancellable: false
         }, async () => {
             return await this.executeGradleTask('assembleDebug');
@@ -224,12 +202,12 @@ export class GradleService {
     }
 
     /**
-     * Build Release APK
+     * 构建 Release APK
      */
     async buildRelease(): Promise<string> {
         return await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
-            title: '📦 Building Release APK...',
+            title: '正在构建 Release APK...',
             cancellable: false
         }, async () => {
             return await this.executeGradleTask('assembleRelease');
@@ -237,8 +215,7 @@ export class GradleService {
     }
 
     /**
-     * Build Release APK with signing parameters
-     * Passes signing config via Gradle command line properties
+     * 构建已签名的 Release APK
      */
     async buildReleaseSigned(
         keystorePath: string,
@@ -248,11 +225,9 @@ export class GradleService {
     ): Promise<string> {
         return await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
-            title: '📦 Building Signed Release APK...',
+            title: '正在构建已签名 Release APK...',
             cancellable: false
         }, async () => {
-            // Pass signing parameters via Gradle properties
-            // These can be read in build.gradle using project.findProperty()
             const signingArgs = [
                 `"-PANDROID_SIGNING_STORE_FILE=${keystorePath}"`,
                 `"-PANDROID_SIGNING_KEY_ALIAS=${keyAlias}"`,
@@ -265,12 +240,12 @@ export class GradleService {
     }
 
     /**
-     * Clean project
+     * 清理项目
      */
     async clean(): Promise<string> {
         return await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
-            title: '🧹 Cleaning project...',
+            title: '正在清理项目...',
             cancellable: false
         }, async () => {
             return await this.executeGradleTask('clean');
@@ -278,38 +253,33 @@ export class GradleService {
     }
 
     /**
-     * Sync Gradle
+     * 同步 Gradle
      */
     async syncGradle(): Promise<void> {
         await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
-            title: '🔄 Syncing Gradle...',
+            title: '正在同步 Gradle...',
             cancellable: false
         }, async () => {
             try {
-                // Execute tasks to sync project
                 await this.executeGradleTask('tasks', false);
-                vscode.window.showInformationMessage('✅ Gradle sync completed!');
+                vscode.window.showInformationMessage('Gradle 同步完成！');
             } catch (error: any) {
-                vscode.window.showErrorMessage(`❌ Gradle sync failed: ${error.message}`);
+                vscode.window.showErrorMessage(`Gradle 同步失败: ${error.message}`);
                 throw error;
             }
         });
     }
 
     /**
-     * Get built APK path
-     * Searches recursively for APK files in the module's output directory.
-     * Handles build flavors (e.g. build/outputs/apk/flavor/debug/app.apk).
+     * 获取构建后的 APK 路径。
+     * 递归搜索模块输出目录，支持构建变体（flavor）。
      */
     getApkPath(variant: 'debug' | 'release' = 'debug'): string {
         const projectRoot = this.findProjectRoot();
-        
-        // Determine module path from targetModule (e.g. :feature:login -> feature/login)
-        // Default to 'app' if no module selected (standard Android convention)
+
         let modulePath = 'app';
         if (this.targetModule) {
-            // Remove leading colon and replace others with platform separator
             modulePath = this.targetModule.replace(/^:/, '').replace(/:/g, path.sep);
         }
 
@@ -321,14 +291,12 @@ export class GradleService {
             'apk'
         );
 
-        this.outputChannel.appendLine(`🔍 Searching for APK in: ${baseApkDir}`);
+        this.outputChannel.appendLine(`正在 APK 目录搜索: ${baseApkDir}`);
 
-        // Default fallback path
         const defaultPath = path.join(baseApkDir, variant, `app-${variant}.apk`);
 
         try {
             if (fs.existsSync(baseApkDir)) {
-                // Recursive function to find all .apk files
                 const findApks = (dir: string): string[] => {
                     let results: string[] = [];
                     const list = fs.readdirSync(dir);
@@ -345,12 +313,8 @@ export class GradleService {
                 };
 
                 const allApks = findApks(baseApkDir);
-                
+
                 if (allApks.length > 0) {
-                    // Filter and sort to find the best match
-                    // 1. Must match the variant (debug/release) roughly
-                    // 2. Should NOT be an androidTest
-                    
                     const matches = allApks.filter(apk => {
                         const lowerPath = apk.toLowerCase();
                         const isAndroidTest = lowerPath.includes('androidtest');
@@ -359,14 +323,12 @@ export class GradleService {
                     });
 
                     if (matches.length > 0) {
-                        // Return the most recently modified one, or just the first one
-                        // Let's sort by modification time (newest first)
                         matches.sort((a, b) => {
                             return fs.statSync(b).mtime.getTime() - fs.statSync(a).mtime.getTime();
                         });
-                        
+
                         const selected = matches[0];
-                        this.outputChannel.appendLine(`✅ Found APK: ${selected}`);
+                        this.outputChannel.appendLine(`找到 APK: ${selected}`);
                         return selected;
                     }
                 }
@@ -379,7 +341,7 @@ export class GradleService {
     }
 
     /**
-     * Check if current workspace is an Android project
+     * 检查当前工作区是否为 Android 项目
      */
     isAndroidProject(): boolean {
         try {
@@ -391,14 +353,13 @@ export class GradleService {
     }
 
     /**
-     * Helper to ensure a file has Unix line endings (LF).
-     * Necessary for running shell scripts on Windows.
+     * 确保文件使用 Unix 换行符（LF），用于在 Windows 下运行 shell 脚本
      */
     private async ensureUnixLineEndings(filePath: string): Promise<void> {
         try {
             const content = fs.readFileSync(filePath, 'utf8');
             if (content.includes('\r\n')) {
-                this.outputChannel.appendLine(`🔧 Fixing line endings for: ${path.basename(filePath)} (CRLF -> LF)`);
+                this.outputChannel.appendLine(`Fixing line endings for: ${path.basename(filePath)} (CRLF -> LF)`);
                 const fixedContent = content.replace(/\r\n/g, '\n');
                 fs.writeFileSync(filePath, fixedContent, 'utf8');
             }
@@ -408,47 +369,37 @@ export class GradleService {
     }
 
     /**
-     * Ensure local.properties exists with valid sdk.dir
+     * 确保 local.properties 存在且包含正确的 sdk.dir
      */
     private async ensureLocalProperties(projectRoot: string): Promise<void> {
         const localPropsPath = path.join(projectRoot, 'local.properties');
-        
+
         try {
             const sdkPath = this.sdkManager.getSDKPath();
             if (!sdkPath) {
-                this.outputChannel.appendLine('⚠️ Android SDK path not configured in extension. Skipping local.properties check.');
+                this.outputChannel.appendLine('Android SDK path not configured. Skipping local.properties check.');
                 return;
             }
 
-            // escape backslashes for properties file (e.g. C:\Sdk -> C\:\\Sdk)
             const escapedSdkPath = sdkPath.replace(/\\/g, '\\\\').replace(/:/g, '\\:');
             const sdkDirLine = `sdk.dir=${escapedSdkPath}`;
 
             if (fs.existsSync(localPropsPath)) {
-                // File exists, check if sdk.dir is present
                 let content = fs.readFileSync(localPropsPath, 'utf8');
                 if (!content.includes('sdk.dir')) {
-                    this.outputChannel.appendLine('🔧 Update local.properties: Adding sdk.dir');
-                    // Add newline if needed
+                    this.outputChannel.appendLine('Update local.properties: Adding sdk.dir');
                     if (!content.endsWith('\n')) content += '\n';
                     content += `${sdkDirLine}\n`;
                     fs.writeFileSync(localPropsPath, content, 'utf8');
-                } else {
-                     // Parse to see if we need to update it? 
-                     // For now, let's assume if it exists, the user might have set it. 
-                     // But if the build failed previously, maybe we should force update/check?
-                     // Let's just log it for now.
-                     // this.outputChannel.appendLine('ℹ️  local.properties exists with sdk.dir');
                 }
             } else {
-                // File doesn't exist, create it
-                this.outputChannel.appendLine('✨ Creating local.properties with SDK path');
+                this.outputChannel.appendLine('Creating local.properties with SDK path');
                 const content = `## This file is automatically generated by Android Studio Flash\n# Do not check into Version Control Systems.\n${sdkDirLine}\n`;
                 fs.writeFileSync(localPropsPath, content, 'utf8');
             }
 
         } catch (error: any) {
-            this.outputChannel.appendLine(`⚠️ Failed to update local.properties: ${error.message}`);
+            this.outputChannel.appendLine(`Failed to update local.properties: ${error.message}`);
         }
     }
 

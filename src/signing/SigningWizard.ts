@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import { KeystoreManager, KeystoreConfig } from './KeystoreManager';
 
 /**
- * Result of signing wizard
+ * 签名向导的返回结果
  */
 export interface SigningResult {
     shouldProceed: boolean;
@@ -15,48 +15,43 @@ export interface SigningResult {
 }
 
 /**
- * Smart wizard that guides users through the release signing process.
- * Checks if signing is configured and offers options accordingly.
+ * 智能签名向导，引导用户完成 release 签名流程。
+ * 检查是否已配置签名，并据此提供选项。
  */
 export class SigningWizard {
     constructor(private keystoreManager: KeystoreManager) {}
 
     /**
-     * Run the signing wizard before building release APK
-     * Returns signing configuration or null if cancelled
+     * 运行签名向导
+     * 返回签名配置或 null（取消）
      */
     async run(): Promise<SigningResult | null> {
-        // Check if signing is already configured in workspace
         if (this.keystoreManager.isSigningConfigured()) {
             return await this.handleExistingConfig();
         }
 
-        // Check if build.gradle has signing config
         const hasGradleSigning = await this.checkGradleSigningConfig();
         if (hasGradleSigning) {
-            // Gradle handles signing, just proceed
             return {
                 shouldProceed: true,
                 signingMode: 'signed'
             };
         }
 
-        // No signing configured - show wizard
         return await this.showSigningOptions();
     }
 
     /**
-     * Handle when signing is already configured in workspace
+     * 处理已存在的签名配置
      */
     private async handleExistingConfig(): Promise<SigningResult | null> {
         const config = this.keystoreManager.getKeystoreConfig()!;
         const passwords = await this.keystoreManager.getPasswords();
 
         if (!passwords) {
-            // Passwords lost, need to re-enter
             const storePassword = await vscode.window.showInputBox({
                 title: 'Keystore Password',
-                prompt: `Enter password for ${path.basename(config.keystorePath)}`,
+                prompt: `输入 ${path.basename(config.keystorePath)} 的密码`,
                 password: true
             });
 
@@ -64,7 +59,7 @@ export class SigningWizard {
 
             const keyPassword = await vscode.window.showInputBox({
                 title: 'Key Password',
-                prompt: 'Enter key password (or leave empty if same)',
+                prompt: '输入密钥密码（留空表示相同）',
                 password: true
             });
 
@@ -79,26 +74,25 @@ export class SigningWizard {
             };
         }
 
-        // Config exists and passwords available
         const action = await vscode.window.showQuickPick([
             {
-                label: '$(check) Use saved signing config',
+                label: '使用已保存的签名配置',
                 description: path.basename(config.keystorePath),
                 value: 'use' as const
             },
             {
-                label: '$(gear) Change signing config',
-                description: 'Select different keystore',
+                label: '更换签名配置',
+                description: '选择其他 keystore',
                 value: 'change' as const
             },
             {
-                label: '$(x) Build unsigned',
-                description: 'Build without signing',
+                label: '构建未签名的 APK',
+                description: '不签名进行构建',
                 value: 'unsigned' as const
             }
         ], {
-            title: 'Release Signing',
-            placeHolder: 'How would you like to sign the release APK?'
+            title: 'Release 签名',
+            placeHolder: '请选择如何签名 release APK？'
         });
 
         if (!action) return null;
@@ -128,84 +122,7 @@ export class SigningWizard {
     }
 
     /**
-     * Show signing options when no config exists
-     */
-    private async showSigningOptions(): Promise<SigningResult | null> {
-        const choice = await vscode.window.showQuickPick([
-            {
-                label: '$(key) Create New Keystore',
-                description: 'Generate a new signing key (recommended for new apps)',
-                value: 'create' as const
-            },
-            {
-                label: '$(folder-opened) Use Existing Keystore',
-                description: 'Select a keystore file you already have',
-                value: 'existing' as const
-            },
-            {
-                label: '$(package) Build Unsigned APK',
-                description: 'Skip signing (cannot be installed on most devices)',
-                value: 'unsigned' as const
-            }
-        ], {
-            title: '🔐 Release Signing Required',
-            placeHolder: 'Release APKs must be signed. Choose an option:'
-        });
-
-        if (!choice) return null;
-
-        switch (choice.value) {
-            case 'create':
-                const created = await this.keystoreManager.createKeystore();
-                if (!created) return null;
-                
-                const passwords = await this.keystoreManager.getPasswords();
-                const config = this.keystoreManager.getKeystoreConfig();
-                
-                return {
-                    shouldProceed: true,
-                    signingMode: 'signed',
-                    keystoreConfig: config,
-                    storePassword: passwords?.storePassword,
-                    keyPassword: passwords?.keyPassword
-                };
-
-            case 'existing':
-                const selected = await this.keystoreManager.selectExistingKeystore();
-                if (!selected) return null;
-                
-                const existingPasswords = await this.keystoreManager.getPasswords();
-                const existingConfig = this.keystoreManager.getKeystoreConfig();
-                
-                return {
-                    shouldProceed: true,
-                    signingMode: 'signed',
-                    keystoreConfig: existingConfig,
-                    storePassword: existingPasswords?.storePassword,
-                    keyPassword: existingPasswords?.keyPassword
-                };
-
-            case 'unsigned':
-                const confirm = await vscode.window.showWarningMessage(
-                    '⚠️ Unsigned APKs cannot be installed on most devices and cannot be uploaded to Play Store.',
-                    { modal: true },
-                    'Build Anyway',
-                    'Cancel'
-                );
-                
-                if (confirm !== 'Build Anyway') return null;
-                
-                return {
-                    shouldProceed: true,
-                    signingMode: 'unsigned'
-                };
-        }
-
-        return null;
-    }
-
-    /**
-     * Find Android project root (mirrors GradleService.findProjectRoot).
+     * 查找 Android 项目根目录（与 GradleService.findProjectRoot 对应）
      */
     private findProjectRoot(): string | undefined {
         const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
@@ -238,13 +155,12 @@ export class SigningWizard {
     }
 
     /**
-     * Check if build.gradle already has signing configuration
+     * 检查 build.gradle 是否已包含签名配置
      */
     private async checkGradleSigningConfig(): Promise<boolean> {
         const projectRoot = this.findProjectRoot();
         if (!projectRoot) return false;
 
-        // Check app/build.gradle or app/build.gradle.kts
         const gradleFiles = [
             path.join(projectRoot, 'app', 'build.gradle'),
             path.join(projectRoot, 'app', 'build.gradle.kts')
@@ -254,15 +170,12 @@ export class SigningWizard {
             if (fs.existsSync(gradleFile)) {
                 try {
                     const content = fs.readFileSync(gradleFile, 'utf-8');
-                    
-                    // Look for signingConfigs block with release config
-                    // This is a simple check - looks for signingConfigs containing release or signingConfig reference
-                    if (content.includes('signingConfigs') && 
+
+                    if (content.includes('signingConfigs') &&
                         (content.includes('signingConfig') || content.includes('release {'))) {
-                        
-                        // Additional check: make sure it's actually configured (has storeFile)
+
                         if (content.includes('storeFile')) {
-                            console.log('✅ Found signing config in build.gradle');
+                            console.log('Found signing config in build.gradle');
                             return true;
                         }
                     }
@@ -273,5 +186,82 @@ export class SigningWizard {
         }
 
         return false;
+    }
+
+    /**
+     * 显示签名选项（无已有配置时）
+     */
+    private async showSigningOptions(): Promise<SigningResult | null> {
+        const choice = await vscode.window.showQuickPick([
+            {
+                label: '创建新的 Keystore',
+                description: '生成新的签名密钥（推荐新应用使用）',
+                value: 'create' as const
+            },
+            {
+                label: '使用已有的 Keystore',
+                description: '选择已有的 keystore 文件',
+                value: 'existing' as const
+            },
+            {
+                label: '构建未签名的 APK',
+                description: '跳过签名（大多数设备无法安装）',
+                value: 'unsigned' as const
+            }
+        ], {
+            title: '需要 Release 签名',
+            placeHolder: 'Release APK 必须签名。请选择：'
+        });
+
+        if (!choice) return null;
+
+        switch (choice.value) {
+            case 'create':
+                const created = await this.keystoreManager.createKeystore();
+                if (!created) return null;
+
+                const passwords = await this.keystoreManager.getPasswords();
+                const config = this.keystoreManager.getKeystoreConfig();
+
+                return {
+                    shouldProceed: true,
+                    signingMode: 'signed',
+                    keystoreConfig: config,
+                    storePassword: passwords?.storePassword,
+                    keyPassword: passwords?.keyPassword
+                };
+
+            case 'existing':
+                const selected = await this.keystoreManager.selectExistingKeystore();
+                if (!selected) return null;
+
+                const existingPasswords = await this.keystoreManager.getPasswords();
+                const existingConfig = this.keystoreManager.getKeystoreConfig();
+
+                return {
+                    shouldProceed: true,
+                    signingMode: 'signed',
+                    keystoreConfig: existingConfig,
+                    storePassword: existingPasswords?.storePassword,
+                    keyPassword: existingPasswords?.keyPassword
+                };
+
+            case 'unsigned':
+                const confirm = await vscode.window.showWarningMessage(
+                    '未签名的 APK 在大多数设备上无法安装，也无法上传到 Play Store。',
+                    { modal: true },
+                    '仍然构建',
+                    '取消'
+                );
+
+                if (confirm !== '仍然构建') return null;
+
+                return {
+                    shouldProceed: true,
+                    signingMode: 'unsigned'
+                };
+        }
+
+        return null;
     }
 }

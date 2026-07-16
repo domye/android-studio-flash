@@ -6,8 +6,8 @@ import { NetworkScanner, ScannedDevice } from './NetworkScanner';
 const execAsync = promisify(exec);
 
 /**
- * Handles ADB over TCP/IP connections for devices running Android 4.0+.
- * Requires initial USB connection to enable TCP/IP mode.
+ * 处理 ADB over TCP/IP 连接，支持 Android 4.0+。
+ * 需要先通过 USB 连接以启用 TCP/IP 模式。
  */
 export class TcpIpConnector {
     private scanner: NetworkScanner;
@@ -17,23 +17,22 @@ export class TcpIpConnector {
     }
 
     /**
-     * Setup ADB over TCP/IP connection
+     * 设置 ADB over TCP/IP 连接
      */
     async setupConnection(): Promise<void> {
-        // Show instructions
         const method = await vscode.window.showQuickPick([
             {
-                label: '$(usb) Device connected via USB',
-                description: 'Device is currently connected with USB cable',
+                label: '设备已通过 USB 连接',
+                description: '当前已使用 USB 线连接设备',
                 value: 'usb' as const
             },
             {
-                label: '$(globe) Device on network',
-                description: 'Device was previously configured',
+                label: '设备在网络中',
+                description: '设备之前已配置过',
                 value: 'network' as const
             }
         ], {
-            placeHolder: 'What is the device status?'
+            placeHolder: '设备当前状态？'
         });
 
         if (!method) {
@@ -48,28 +47,26 @@ export class TcpIpConnector {
     }
 
     /**
-     * Setup from USB-connected device
+     * 通过 USB 连接的设备进行设置
      */
     private async setupFromUsb(): Promise<void> {
         try {
-            // Step 1: Get list of USB-connected devices
             const { stdout } = await execAsync(`"${this.adbPath}" devices`);
             const usbDevices = this.parseUsbDevices(stdout);
 
             if (usbDevices.length === 0) {
-                vscode.window.showWarningMessage('⚠️ No USB devices connected');
+                vscode.window.showWarningMessage('没有通过 USB 连接的设备');
                 return;
             }
 
-            // Step 2: Select device (if more than one)
             let selectedDeviceId: string;
-            
+
             if (usbDevices.length === 1) {
                 selectedDeviceId = usbDevices[0];
             } else {
                 const selected = await vscode.window.showQuickPick(
                     usbDevices.map(id => ({ label: id, value: id })),
-                    { placeHolder: 'Select device' }
+                    { placeHolder: '选择设备' }
                 );
                 if (!selected) {
                     return;
@@ -77,16 +74,15 @@ export class TcpIpConnector {
                 selectedDeviceId = selected.value;
             }
 
-            // Step 3: Switch device to TCP/IP mode
             await this.enableTcpIpMode(selectedDeviceId);
 
         } catch (error: any) {
-            vscode.window.showErrorMessage(`❌ Error: ${error.message}`);
+            vscode.window.showErrorMessage(`错误: ${error.message}`);
         }
     }
 
     /**
-     * Parse USB devices from adb output
+     * 从 adb 输出中解析 USB 设备
      */
     private parseUsbDevices(adbOutput: string): string[] {
         const lines = adbOutput.split('\n');
@@ -96,7 +92,6 @@ export class TcpIpConnector {
             if (line && !line.startsWith('List of devices') && line.trim()) {
                 const parts = line.split(/\s+/);
                 if (parts.length >= 2 && parts[1] === 'device') {
-                    // Ignore wireless devices (containing :)
                     if (!parts[0].includes(':')) {
                         devices.push(parts[0]);
                     }
@@ -108,100 +103,84 @@ export class TcpIpConnector {
     }
 
     /**
-     * Enable TCP/IP mode on device
+     * 在设备上启用 TCP/IP 模式
      */
     private async enableTcpIpMode(deviceId: string, port: number = 5555): Promise<void> {
         try {
-            // Get IP **before** enabling TCP/IP mode
-            // Because device will disconnect from USB after execution!
+            // 在启用 TCP/IP 之前获取 IP（设备会断开 USB！）
             const deviceIp = await this.getDeviceIp(deviceId);
 
             if (!deviceIp) {
                 vscode.window.showWarningMessage(
-                    '⚠️ Could not get device IP.\n' +
-                    'Make sure the device is connected to WiFi and try again.'
+                    '无法获取设备 IP。\n' +
+                    '请确保设备已连接到 WiFi 后重试。'
                 );
-                // Fallback to manual connection
                 await this.connectToExistingDevice(port);
                 return;
             }
 
-            // Now enable TCP/IP mode
             await vscode.window.withProgress({
                 location: vscode.ProgressLocation.Notification,
-                title: '🔄 Enabling TCP/IP mode...',
+                title: '正在启用 TCP/IP 模式...',
                 cancellable: false
             }, async () => {
-                // adb -s DEVICE tcpip PORT
                 await execAsync(`"${this.adbPath}" -s ${deviceId} tcpip ${port}`);
             });
 
-            // Wait briefly after enabling
             await this.sleep(1500);
 
-            // Show device IP clearly before disconnecting cable
             const endpoint = `${deviceIp}:${port}`;
-            
+
             const action = await vscode.window.showInformationMessage(
-                `✅ TCP/IP mode enabled successfully!\n\n` +
-                `📱 Device: ${deviceId}\n` +
-                `🌐 Connection address: ${endpoint}\n\n` +
-                `You can now disconnect the USB cable and connect wirelessly.`,
+                `TCP/IP 模式已成功启用！\n\n` +
+                `设备: ${deviceId}\n` +
+                `连接地址: ${endpoint}\n\n` +
+                `现在可以断开 USB 数据线，通过无线连接。`,
                 {
                     modal: true,
-                    detail: 'Connection will be established automatically after confirmation.'
+                    detail: '确认后将自动建立连接。'
                 },
-                'Connect now ✅',
-                'Copy IP 📋',
-                'Cancel'
+                '立即连接',
+                '复制 IP',
+                '取消'
             );
 
-            if (action === 'Copy IP 📋') {
-                // Copy IP to clipboard
+            if (action === '复制 IP') {
                 await vscode.env.clipboard.writeText(endpoint);
-                vscode.window.showInformationMessage(`📋 Copied: ${endpoint}`);
-                
-                // Show options again
+                vscode.window.showInformationMessage(`已复制: ${endpoint}`);
+
                 const retryAction = await vscode.window.showInformationMessage(
-                    `IP copied: ${endpoint}\n\nDo you want to connect now?`,
-                    'Connect now ✅',
-                    'Cancel'
+                    `IP 已复制: ${endpoint}\n\n是否立即连接？`,
+                    '立即连接',
+                    '取消'
                 );
-                
-                if (retryAction === 'Connect now ✅') {
+
+                if (retryAction === '立即连接') {
                     await this.connectToDevice(deviceIp, port);
                 }
-            } else if (action === 'Connect now ✅') {
-                // Connect directly
+            } else if (action === '立即连接') {
                 await this.connectToDevice(deviceIp, port);
             }
-            // If "Cancel" - do nothing
 
         } catch (error: any) {
-            vscode.window.showErrorMessage(`❌ Failed to enable TCP/IP: ${error.message}`);
+            vscode.window.showErrorMessage(`启用 TCP/IP 失败: ${error.message}`);
         }
     }
 
     /**
-     * Get device IP address (while still connected via USB).
-     * Searches multiple network interfaces to support various connection modes:
-     * - wlan0: Standard WiFi connection (device connected to router/hotspot)
-     * - ap0/swlan0/wlan1: Hotspot mode (device IS the hotspot)
-     * - rndis0: USB tethering interface
+     * 获取设备 IP 地址（在 USB 连接时）。
+     * 搜索多个网络接口以支持各种连接模式：
+     * - wlan0：标准 WiFi
+     * - ap0/swlan0/wlan1：热点模式
+     * - rndis0：USB 网络共享
      */
     private async getDeviceIp(deviceId: string): Promise<string | null> {
         try {
-            // Get ALL network interfaces instead of just wlan0
-            // This allows detection when device is acting as a Hotspot
             const { stdout } = await execAsync(
                 `"${this.adbPath}" -s ${deviceId} shell ip addr`,
                 { timeout: 5000 }
             );
 
-            // Search for private network IPs in order of priority:
-            // 1. 192.168.x.x (most common for WiFi/Hotspot)
-            // 2. 10.x.x.x (some networks use this range)
-            // 3. 172.16-31.x.x (less common private range)
             const privateIpPatterns = [
                 /inet\s+(192\.168\.\d+\.\d+)/,
                 /inet\s+(10\.\d+\.\d+\.\d+)/,
@@ -211,12 +190,12 @@ export class TcpIpConnector {
             for (const pattern of privateIpPatterns) {
                 const match = stdout.match(pattern);
                 if (match && match[1]) {
-                    console.log(`✅ Got device IP: ${match[1]}`);
+                    console.log(`Got device IP: ${match[1]}`);
                     return match[1];
                 }
             }
-            
-            console.warn('⚠️ No private IP found in any network interface');
+
+            console.warn('No private IP found in any network interface');
             return null;
 
         } catch (error: any) {
@@ -225,31 +204,26 @@ export class TcpIpConnector {
         }
     }
 
-    /**
-     * Helper function for delay
-     */
     private sleep(ms: number): Promise<void> {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
     /**
-     * Connect to existing device on network
+     * 连接到网络中的已有设备
      */
     private async connectToExistingDevice(defaultPort: number = 5555): Promise<void> {
-        // Option 1: Manual input
-        // Option 2: Network scan
         const method = await vscode.window.showQuickPick([
             {
-                label: '$(edit) Enter IP manually',
+                label: '手动输入 IP',
                 value: 'manual' as const
             },
             {
-                label: '$(search) Scan network',
-                description: 'Search for devices automatically (may take time)',
+                label: '扫描网络',
+                description: '自动搜索设备（可能需要一些时间）',
                 value: 'scan' as const
             }
         ], {
-            placeHolder: 'How would you like to find the device?'
+            placeHolder: '如何查找设备？'
         });
 
         if (!method) {
@@ -264,15 +238,15 @@ export class TcpIpConnector {
     }
 
     /**
-     * Manual connection
+     * 手动输入 IP 连接
      */
     private async connectManually(defaultPort: number): Promise<void> {
         const ipAddress = await vscode.window.showInputBox({
-            prompt: 'Enter device IP Address (find it in Settings → About → Status)',
+            prompt: '输入设备 IP 地址（在 设置 -> 关于 -> 状态 中查看）',
             placeHolder: '192.168.1.100',
             validateInput: (value) => {
                 const regex = /^(\d{1,3}\.){3}\d{1,3}$/;
-                return regex.test(value) ? null : 'Invalid IP format';
+                return regex.test(value) ? null : 'IP 格式错误';
             }
         });
 
@@ -284,13 +258,13 @@ export class TcpIpConnector {
     }
 
     /**
-     * Scan network and connect
+     * 扫描网络并连接
      */
     private async scanAndConnect(): Promise<void> {
         const foundDevices = await this.scanner.scanNetwork();
 
         if (foundDevices.length === 0) {
-            vscode.window.showWarningMessage('⚠️ No devices found');
+            vscode.window.showWarningMessage('没有找到设备');
             return;
         }
 
@@ -300,7 +274,7 @@ export class TcpIpConnector {
                 description: device.ip,
                 deviceInfo: device
             })),
-            { placeHolder: 'Select a device' }
+            { placeHolder: '选择设备' }
         );
 
         if (!selected) {
@@ -311,7 +285,7 @@ export class TcpIpConnector {
     }
 
     /**
-     * Connect to a device
+     * 连接到设备
      */
     private async connectToDevice(ip: string, port: number): Promise<void> {
         const endpoint = `${ip}:${port}`;
@@ -319,27 +293,26 @@ export class TcpIpConnector {
         try {
             await vscode.window.withProgress({
                 location: vscode.ProgressLocation.Notification,
-                title: `🔄 Connecting to ${endpoint}...`,
+                title: `正在连接 ${endpoint}...`,
                 cancellable: false
             }, async () => {
                 await execAsync(`"${this.adbPath}" connect ${endpoint}`);
             });
 
             vscode.window.showInformationMessage(
-                `✅ Connected successfully!\n${endpoint}\n\n` +
-                'You can now disconnect the USB cable'
+                `连接成功！\n${endpoint}\n\n` +
+                '现在可以断开 USB 数据线'
             );
 
-            // Refresh device list
             vscode.commands.executeCommand('android.refreshDevices');
 
         } catch (error: any) {
             vscode.window.showErrorMessage(
-                `❌ Failed to connect to ${endpoint}: ${error.message}\n\n` +
-                'Make sure:\n' +
-                '• Device and computer are on the same network\n' +
-                '• IP Address is correct\n' +
-                '• Developer options are enabled on the device'
+                `连接到 ${endpoint} 失败: ${error.message}\n\n` +
+                '请确保：\n' +
+                '  - 设备和电脑在同一个网络中\n' +
+                '  - IP 地址正确\n' +
+                '  - 设备已开启开发者选项'
             );
         }
     }

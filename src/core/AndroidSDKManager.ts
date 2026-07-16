@@ -4,8 +4,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 
 /**
- * Manages Android SDK detection and path resolution.
- * Automatically detects SDK location from settings, environment variables, or default paths.
+ * 管理 Android SDK 检测和路径解析。
+ * 自动从设置、环境变量或默认路径检测 SDK 位置。
  */
 export class AndroidSDKManager {
     private sdkPath: string = '';
@@ -15,42 +15,42 @@ export class AndroidSDKManager {
     }
 
     /**
-     * Automatically detect Android SDK path
+     * 自动检测 Android SDK 路径
      */
     private detectSDK(): void {
-        // First, try to get from settings
+        // 优先从设置读取
         const config = vscode.workspace.getConfiguration('android');
         const configuredPath = config.get<string>('sdkPath');
 
         if (configuredPath && fs.existsSync(configuredPath)) {
             this.sdkPath = configuredPath;
-            console.log('✅ SDK found from settings:', this.sdkPath);
+            console.log('SDK found from settings:', this.sdkPath);
             return;
         }
 
-        // Try to get from environment variables
+        // 从环境变量读取
         const envPath = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT;
         if (envPath && fs.existsSync(envPath)) {
             this.sdkPath = envPath;
-            console.log('✅ SDK found from environment:', this.sdkPath);
+            console.log('SDK found from environment:', this.sdkPath);
             return;
         }
 
-        // Default paths based on operating system
+        // 根据操作系统尝试默认路径
         const defaultPaths = this.getDefaultSDKPaths();
         for (const defaultPath of defaultPaths) {
             if (fs.existsSync(defaultPath)) {
                 this.sdkPath = defaultPath;
-                console.log('✅ SDK found at default location:', this.sdkPath);
+                console.log('SDK found at default location:', this.sdkPath);
                 return;
             }
         }
 
-        console.warn('⚠️ Android SDK not found automatically');
+        console.warn('Android SDK not found automatically');
     }
 
     /**
-     * Get default SDK paths based on operating system
+     * 根据操作系统获取默认 SDK 路径列表
      */
     private getDefaultSDKPaths(): string[] {
         const homeDir = os.homedir();
@@ -76,14 +76,14 @@ export class AndroidSDKManager {
     }
 
     /**
-     * Get SDK path
+     * 获取 SDK 路径
      */
     getSDKPath(): string {
         return this.sdkPath;
     }
 
     /**
-     * Get ADB executable path
+     * 获取 ADB 可执行文件路径
      */
     getADBPath(): string {
         if (!this.sdkPath) {
@@ -101,7 +101,7 @@ export class AndroidSDKManager {
     }
 
     /**
-     * Get AVD Manager path
+     * 获取 AVD Manager 路径
      */
     getAVDManagerPath(): string {
         if (!this.sdkPath) {
@@ -115,7 +115,7 @@ export class AndroidSDKManager {
     }
 
     /**
-     * Get Emulator executable path
+     * 获取模拟器可执行文件路径
      */
     getEmulatorPath(): string {
         if (!this.sdkPath) {
@@ -129,32 +129,32 @@ export class AndroidSDKManager {
     }
 
     /**
-     * Verify SDK is properly installed
+     * 验证 SDK 是否已正确安装
      */
     async verifySDK(): Promise<boolean> {
         if (!this.sdkPath) {
-            vscode.window.showErrorMessage('❌ Android SDK not found. Please set the path in Settings.');
+            vscode.window.showErrorMessage('未找到 Android SDK。请在设置中配置路径。');
             return false;
         }
 
         try {
-            this.getADBPath(); // Will throw if not found
+            this.getADBPath(); // 若未找到则会抛出异常
             return true;
         } catch (error) {
-            vscode.window.showErrorMessage(`❌ ${error}`);
+            vscode.window.showErrorMessage(`${error}`);
             return false;
         }
     }
 
     /**
-     * Prompt user to select SDK path
+     * 让用户选择 SDK 路径
      */
     async promptForSDKPath(): Promise<void> {
         const uri = await vscode.window.showOpenDialog({
             canSelectFiles: false,
             canSelectFolders: true,
             canSelectMany: false,
-            title: 'Select Android SDK folder'
+            title: '选择 Android SDK 文件夹'
         });
 
         if (uri && uri[0]) {
@@ -162,7 +162,7 @@ export class AndroidSDKManager {
             const config = vscode.workspace.getConfiguration('android');
             await config.update('sdkPath', selectedPath, vscode.ConfigurationTarget.Global);
             this.sdkPath = selectedPath;
-            vscode.window.showInformationMessage('✅ SDK path updated successfully!');
+            vscode.window.showInformationMessage('SDK 路径更新成功！');
         }
     }
 }

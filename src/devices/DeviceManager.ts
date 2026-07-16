@@ -8,7 +8,7 @@ import { exec, spawn, ChildProcess } from 'child_process';
 const execAsync = promisify(exec);
 
 /**
- * Represents an Android device (physical or emulator)
+ * 表示一个 Android 设备（物理机或模拟器）
  */
 export interface AndroidDevice {
     id: string;
@@ -20,7 +20,7 @@ export interface AndroidDevice {
 }
 
 /**
- * Manages Android device detection, selection, and operations.
+ * 管理 Android 设备检测、选择和操作。
  */
 export class DeviceManager {
     private devices: AndroidDevice[] = [];
@@ -28,59 +28,54 @@ export class DeviceManager {
     private sdkManager: AndroidSDKManager;
     private onDidChangeDevicesEmitter = new vscode.EventEmitter<void>();
     readonly onDidChangeDevices = this.onDidChangeDevicesEmitter.event;
-    private adbTracker: ChildProcess | null = null; // Reference to the tracking process    
-    
-    // Timer to prevent multiple refreshes at once
-    private refreshTimeout: NodeJS.Timeout | undefined; 
-    
+    private adbTracker: ChildProcess | null = null;
+
+    // 防抖定时器，防止频繁刷新
+    private refreshTimeout: NodeJS.Timeout | undefined;
+
     constructor() {
         this.sdkManager = new AndroidSDKManager();
-         this.refreshDevices(); // Initial check
-        this.startMonitoring(); // Start automatic detection
+        this.refreshDevices();
+        this.startMonitoring();
     }
 
-        /**
-     * Starts monitoring for device connection changes without polling.
-     * Uses 'adb track-devices' which is efficient and event-driven.
+    /**
+     * 通过 adb track-devices 事件驱动监听设备变化，无需轮询。
      */
     startMonitoring(): void {
         const adbPath = this.sdkManager.getADBPath();
-        
-        // Spawn a persistent process
+
         this.adbTracker = spawn(adbPath, ['track-devices']);
 
         this.adbTracker.stdout?.on('data', () => {
-            // إذا كان هناك مؤقت سابق، قم بإلغائه
             if (this.refreshTimeout) {
                 clearTimeout(this.refreshTimeout);
             }
 
-            // انتظر 500 مللي ثانية قبل التحديث، للتأكد من استقرار الاتصال
+            // 等待 500ms 确保连接稳定
             this.refreshTimeout = setTimeout(() => {
                 this.refreshDevices();
             }, 500);
         });
 
         this.adbTracker.on('error', (err) => {
-            console.error('ADB Tracking Error:', err);
+            console.error('ADB tracking error:', err);
         });
     }
 
     /**
-     * Refresh the list of connected devices
+     * 刷新已连接设备列表
      */
     async refreshDevices(): Promise<void> {
         try {
             const adbPath = this.sdkManager.getADBPath();
             const { stdout } = await execAsync(`"${adbPath}" devices -l`);
-            
+
             this.devices = [];
             const lines = stdout.split('\n');
-            
+
             for (const line of lines) {
                 if (line && !line.startsWith('List of devices') && line.trim()) {
-                    // Example line:
-                    // 5cda021f               device usb:1-1 product:RMX2061 model:RMX2061 device:RMX2061L1
                     const parts = line.split(/\s+/);
                     if (parts.length >= 2) {
                         const device: AndroidDevice = {
@@ -88,15 +83,13 @@ export class DeviceManager {
                             type: parts[0].startsWith('emulator-') ? 'emulator' : 'device',
                             state: parts[1] as any
                         };
-                        
-                        // Extract additional info from rest of line
-                        // Looking for: model:xxx product:xxx device:xxx
+
                         const modelMatch = line.match(/model:([^\s]+)/);
                         const productMatch = line.match(/product:([^\s]+)/);
                         const deviceMatch = line.match(/device:([^\s]+)/);
-                        
+
                         if (modelMatch) {
-                            device.model = modelMatch[1].replace(/_/g, ' '); // Replace _ with spaces
+                            device.model = modelMatch[1].replace(/_/g, ' ');
                         }
                         if (productMatch) {
                             device.product = productMatch[1];
@@ -104,21 +97,20 @@ export class DeviceManager {
                         if (deviceMatch) {
                             device.device = deviceMatch[1];
                         }
-                        
+
                         this.devices.push(device);
                     }
                 }
             }
 
-              if (this.selectedDevice) {
+            if (this.selectedDevice) {
                 const deviceStillConnected = this.devices.find(d => d.id === this.selectedDevice?.id);
                 if (!deviceStillConnected) {
-                    this.selectedDevice = null; // الجهاز فُصل، احذف الاختيار
+                    this.selectedDevice = null;
                 } else {
-                    this.selectedDevice = deviceStillConnected; // تحديث بياناته (مثل الحالة offline/online)
+                    this.selectedDevice = deviceStillConnected;
                 }
             }
-
 
             if (!this.selectedDevice && this.devices.length > 0) {
                 this.selectedDevice = this.devices[0];
@@ -126,32 +118,31 @@ export class DeviceManager {
 
             this.onDidChangeDevicesEmitter.fire();
         } catch(error: any) {
-            console.error('❌ Failed to refresh devices:', error);
+            console.error('Failed to refresh devices:', error);
             console.error('Error details:', error.message);
-            
+
             this.devices = [];
-            
-            // Concise toast, details available in debug console
-            vscode.window.showErrorMessage(`❌ ADB device refresh failed: ${error.message}. Check debug console for details.`);
+
+            vscode.window.showErrorMessage(`ADB 设备刷新失败: ${error.message}。查看调试控制台获取详细信息。`);
         }
     }
 
     /**
-     * Get list of connected devices
+     * 获取已连接设备列表
      */
     getDevices(): AndroidDevice[] {
         return this.devices;
     }
 
     /**
-     * Get currently selected device
+     * 获取当前选中的设备
      */
     getSelectedDevice(): AndroidDevice | null {
         return this.selectedDevice;
     }
 
     /**
-     * Select a device by its ID (used by tree view selection)
+     * 根据设备 ID 选中设备（供 Tree View 使用）
      */
     selectDeviceById(deviceId: string): void {
         const device = this.devices.find(d => d.id === deviceId);
@@ -162,11 +153,11 @@ export class DeviceManager {
     }
 
     /**
-     * Show device selection dialog
+     * 弹出设备选择对话框
      */
     async selectDevice(): Promise<void> {
         if (this.devices.length === 0) {
-            vscode.window.showWarningMessage('⚠️ No devices connected!');
+            vscode.window.showWarningMessage('没有已连接的设备！');
             return;
         }
 
@@ -177,7 +168,7 @@ export class DeviceManager {
         }));
 
         const selected = await vscode.window.showQuickPick(items, {
-            placeHolder: 'Select a device'
+            placeHolder: '选择设备'
         });
 
         if (selected) {
@@ -187,20 +178,19 @@ export class DeviceManager {
     }
 
     /**
-     * Get display name for a device
+     * 获取设备显示名称
      */
     getDeviceDisplayName(device: AndroidDevice): string {
-        const icon = device.type === 'emulator' ? '📱' : '🔌';
-        const status = device.state === 'online' || device.state === 'device' ? '🟢' : '🔴';
-        
-        // Show real device name (model or product) instead of ID
+        const icon = device.type === 'emulator' ? '[Emulator]' : '[Device]';
+        const status = device.state === 'online' || device.state === 'device' ? '[Online]' : '[Offline]';
+
         const name = device.model || device.product || device.device || device.id;
-        
+
         return `${status} ${icon} ${name}`;
     }
 
     /**
-     * Install APK on selected device
+     * 在选定设备上安装 APK
      */
     async installApk(apkPath: string): Promise<void> {
         const device = this.selectedDevice;
@@ -211,7 +201,7 @@ export class DeviceManager {
     }
 
     /**
-     * Launch app on selected device
+     * 在选定设备上启动应用
      */
     async launchApp(packageName: string, activityName: string): Promise<void> {
         const device = this.selectedDevice;
@@ -223,8 +213,8 @@ export class DeviceManager {
     }
 
     /**
-     * Get package name from APK using aapt.
-     * Falls back to extracting from the filename if aapt is unavailable.
+     * 从 APK 中获取包名（使用 aapt）
+     * 若 aapt 不可用则从文件名推断
      */
     async getPackageName(apkPath: string): Promise<string> {
         try {
@@ -243,9 +233,9 @@ export class DeviceManager {
                     }
                 }
             }
-        } catch { /* fall through */ }
+        } catch { /* 静默降级 */ }
 
-        // Fallback: extract from filename
+        // 降级：从文件名提取
         const basename = path.basename(apkPath).replace(/-debug|-release|-unsigned/g, '').replace(/\.apk$/, '');
         return basename;
     }

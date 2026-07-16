@@ -15,8 +15,8 @@ import { SigningWizard } from './signing/SigningWizard';
 import { runDiagnostics } from './utils/diagnostics';
 
 /**
- * Quick check whether the workspace looks like an Android project.
- * Avoids activating in random workspaces that happen to have a build.gradle.
+ * 快速检查工作区是否为 Android 项目。
+ * 避免在无关项目（如有 build.gradle 的 npm 包）中激活。
  */
 function isAndroidWorkspace(rootPath: string): boolean {
     const hasSettings = fs.existsSync(path.join(rootPath, 'settings.gradle')) ||
@@ -30,7 +30,7 @@ function isAndroidWorkspace(rootPath: string): boolean {
         return true;
     }
 
-    // Check one level deep (projects with android/ subdirectory, e.g. Flutter)
+    // 检查一级子目录（兼容 android/ 子目录结构，如 Flutter 项目）
     try {
         const subdirs = fs.readdirSync(rootPath)
             .map((n: string) => path.join(rootPath, n))
@@ -54,120 +54,95 @@ let treeProvider: AndroidTreeProvider;
 let wirelessManager: WirelessADBManager;
 
 export async function activate(context: vscode.ExtensionContext) {
-    // Early exit: only activate for actual Android projects
+    // 提前退出：仅对 Android 项目激活
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder || !isAndroidWorkspace(workspaceFolder.uri.fsPath)) {
-        console.log('⏭️ Not an Android project, skipping activation');
+        console.log('Not an Android project, skipping activation');
         return;
     }
 
-    console.log('🚀 Android Studio Flash is now active!');
+    console.log('Android Studio Flash is now active!');
 
     try {
-        // Initialize core components
         const sdkManager = new AndroidSDKManager();
         const gradleService = new GradleService(sdkManager);
-        const gradleModuleService = new GradleModuleService(); // New Service
+        const gradleModuleService = new GradleModuleService();
         deviceManager = new DeviceManager();
         statusBar = new BuildStatusBar(deviceManager);
         buildSystem = new BuildSystem(gradleService, deviceManager, statusBar);
         logcatManager = new LogcatManager(deviceManager, sdkManager);
         wirelessManager = new WirelessADBManager(sdkManager.getADBPath(), context);
 
-        // Initialize signing components
         const keystoreManager = new KeystoreManager(context);
         const signingWizard = new SigningWizard(keystoreManager);
         buildSystem.setSigningWizard(signingWizard);
 
-        // Initialize UI components
-        statusBar = new BuildStatusBar(deviceManager);
         treeProvider = new AndroidTreeProvider(
-            deviceManager, 
-            buildSystem, 
-            logcatManager, 
+            deviceManager,
+            buildSystem,
+            logcatManager,
             wirelessManager,
             gradleService,
             gradleModuleService
         );
 
-        // Module Selection Status Bar
+        // 模块选择状态栏
         const moduleStatusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 90);
         moduleStatusBar.command = 'android.selectModule';
         context.subscriptions.push(moduleStatusBar);
 
-        // Restore saved module selection
         const savedModule = context.workspaceState.get<string>('android-studio-flash.selectedModule');
         if (savedModule) {
             gradleService.setTargetModule(savedModule);
-            moduleStatusBar.text = `$(package) Module: ${savedModule}`;
+            moduleStatusBar.text = `模块: ${savedModule}`;
         } else {
-            moduleStatusBar.text = '$(package) Module: (Project Root)';
+            moduleStatusBar.text = '模块: (项目根目录)';
         }
         moduleStatusBar.show();
 
-        // Register Tree View
         vscode.window.registerTreeDataProvider('androidPanel', treeProvider);
 
-        // Register Build Commands
         context.subscriptions.push(
             vscode.commands.registerCommand('android.buildApk', async () => {
                 await buildSystem.buildDebug();
             })
         );
 
-        // ... [Existing Commands] ...
-
-        // NEW: Select Module Command
         context.subscriptions.push(
             vscode.commands.registerCommand('android.selectModule', async () => {
                 try {
                     const root = gradleService.findProjectRoot();
                     const modules = await gradleModuleService.getModules(root);
-                    
+
                     if (modules.length === 0) {
-                        vscode.window.showInformationMessage('No modules found in settings.gradle');
+                        vscode.window.showInformationMessage('在 settings.gradle 中未找到模块');
                         return;
                     }
 
                     const selected = await vscode.window.showQuickPick(modules, {
-                        placeHolder: 'Select Gradle Module to Build',
-                        title: 'Select Active Module'
+                        placeHolder: '选择要构建的 Gradle 模块',
+                        title: '选择活动模块'
                     });
 
                     if (selected) {
-                        // Save state
                         await context.workspaceState.update('android-studio-flash.selectedModule', selected);
-                        
-                        // Update Service
                         gradleService.setTargetModule(selected);
-                        
-                        // Update UI
-                        moduleStatusBar.text = `$(package) Module: ${selected}`;
-                        vscode.window.showInformationMessage(`✅ Active Module: ${selected}`);
-                        
-                        // Refresh Tree to show checkmark
+                        moduleStatusBar.text = `模块: ${selected}`;
+                        vscode.window.showInformationMessage(`活动模块: ${selected}`);
                         treeProvider.refresh();
                     }
                 } catch (error: any) {
-                    vscode.window.showErrorMessage(`Failed to select module: ${error.message}`);
+                    vscode.window.showErrorMessage(`选择模块失败: ${error.message}`);
                 }
             })
         );
 
-        // NEW: Select Module Directly from Tree
         context.subscriptions.push(
             vscode.commands.registerCommand('android.selectModuleFromTree', async (moduleName: string) => {
                 if (moduleName) {
-                    // Update Service
                     gradleService.setTargetModule(moduleName);
-                    
-                    // Save state
                     await context.workspaceState.update('android-studio-flash.selectedModule', moduleName);
-
-                    // Update UI
-                    moduleStatusBar.text = `$(package) Module: ${moduleName}`;
-                    
-                    // Refresh Tree to show checkmark
+                    moduleStatusBar.text = `模块: ${moduleName}`;
                     treeProvider.refresh();
                 }
             })
@@ -197,14 +172,12 @@ export async function activate(context: vscode.ExtensionContext) {
             })
         );
 
-        // Signing Commands
         context.subscriptions.push(
             vscode.commands.registerCommand('android.createKeystore', async () => {
                 await keystoreManager.createKeystore();
             })
         );
 
-        // Run Commands
         context.subscriptions.push(
             vscode.commands.registerCommand('android.runApp', async () => {
                 await buildSystem.runApp();
@@ -217,7 +190,6 @@ export async function activate(context: vscode.ExtensionContext) {
             })
         );
 
-        // Device Commands
         context.subscriptions.push(
             vscode.commands.registerCommand('android.selectDevice', async () => {
                 await deviceManager.selectDevice();
@@ -230,7 +202,7 @@ export async function activate(context: vscode.ExtensionContext) {
                     deviceManager.selectDeviceById(device.id);
                     statusBar.update();
                     treeProvider.refresh();
-                    vscode.window.showInformationMessage(`✅ Selected: ${device.id}`);
+                    vscode.window.showInformationMessage(`已选择: ${device.id}`);
                 }
             })
         );
@@ -243,7 +215,6 @@ export async function activate(context: vscode.ExtensionContext) {
             })
         );
 
-        // Logcat Commands
         context.subscriptions.push(
             vscode.commands.registerCommand('android.showLogcat', async () => {
                 await logcatManager.showLogcat();
@@ -259,7 +230,7 @@ export async function activate(context: vscode.ExtensionContext) {
         context.subscriptions.push(
             vscode.commands.registerCommand('android.stopLogcat', () => {
                 logcatManager.stopLogcat();
-                vscode.window.showInformationMessage('⏹️ Logcat stopped');
+                vscode.window.showInformationMessage('Logcat 已停止');
             })
         );
 
@@ -269,7 +240,6 @@ export async function activate(context: vscode.ExtensionContext) {
             })
         );
 
-        // Wireless ADB Commands
         context.subscriptions.push(
             vscode.commands.registerCommand('android.setupWireless', async () => {
                 await wirelessManager.setupWirelessConnection();
@@ -293,7 +263,6 @@ export async function activate(context: vscode.ExtensionContext) {
             })
         );
 
-        // Diagnostics Command
         context.subscriptions.push(
             vscode.commands.registerCommand('android.runDiagnostics', async () => {
                 await runDiagnostics(context);
@@ -314,8 +283,7 @@ export async function activate(context: vscode.ExtensionContext) {
             vscode.commands.registerCommand('android.reconnectWirelessDevice', async (device) => {
                 if (device && device.ipAddress && device.port) {
                     const endpoint = `${device.ipAddress}:${device.port}`;
-                    vscode.window.showInformationMessage(`🔄 Reconnecting to ${endpoint}...`);
-                    // Will be handled by attemptReconnect internally
+                    vscode.window.showInformationMessage(`正在重新连接到 ${endpoint}...`);
                     await wirelessManager.autoReconnectSavedDevices();
                     await deviceManager.refreshDevices();
                     treeProvider.refresh();
@@ -323,33 +291,30 @@ export async function activate(context: vscode.ExtensionContext) {
             })
         );
 
-        // Initial device refresh
-        // Auto-reconnect saved wireless devices
         await wirelessManager.autoReconnectSavedDevices();
-        
+
         await deviceManager.refreshDevices();
         statusBar.update();
 
-        // Welcome message
-        vscode.window.showInformationMessage('✅ Android Studio Flash is ready!');
+        vscode.window.showInformationMessage('Android Studio Flash 已就绪！');
 
     } catch (error) {
-        vscode.window.showErrorMessage(`❌ Extension initialization error: ${error}`);
+        vscode.window.showErrorMessage(`扩展初始化错误: ${error}`);
         console.error('Activation error:', error);
     }
 }
 
 export function deactivate() {
-    console.log('👋 Android Studio Flash is deactivating...');
-    
+    console.log('Android Studio Flash is deactivating...');
+
     if (logcatManager) {
         logcatManager.dispose();
     }
-    
+
     if (statusBar) {
         statusBar.dispose();
     }
-    
+
     if (wirelessManager) {
         wirelessManager.dispose();
     }

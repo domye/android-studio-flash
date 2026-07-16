@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { DeviceManager } from '../devices/DeviceManager';
 
 /**
- * Status bar item that shows the current device and provides quick run access.
+ * 状态栏组件，显示当前设备和快速运行入口。
  */
 export class BuildStatusBar {
     private runStatusBarItem: vscode.StatusBarItem;
@@ -14,7 +14,7 @@ export class BuildStatusBar {
         );
 
         this.runStatusBarItem.command = 'android.runApp';
-        this.runStatusBarItem.tooltip = 'Build and Run on device';
+        this.runStatusBarItem.tooltip = '构建并运行在设备上';
         this.runStatusBarItem.show();
 
         this.update();
@@ -25,35 +25,33 @@ export class BuildStatusBar {
     }
 
     /**
-     * Show a temporary status message (e.g. build progress).
+     * 显示临时构建状态（如构建进度）
      */
     showBuildStatus(message: string): void {
-        this.runStatusBarItem.text = `$(sync~spin) ${message}`;
+        this.runStatusBarItem.text = `[构建中] ${message}`;
     }
 
     /**
-     * Restore to normal device display.
+     * 恢复为正常设备显示
      */
     update() {
         const selectedDevice = this.deviceManager.getSelectedDevice();
         const devices = this.deviceManager.getDevices();
 
         if (selectedDevice) {
-            const icon = selectedDevice.type === 'emulator' ? '$(device-mobile)' : '$(device-camera)';
             const name = this.getDisplayName(selectedDevice);
-            this.runStatusBarItem.text = `${icon} ▶️ ${name}`;
-            this.runStatusBarItem.tooltip = `Run on ${name} (${selectedDevice.id})`;
+            this.runStatusBarItem.text = `[运行] ${name}`;
+            this.runStatusBarItem.tooltip = `在 ${name} (${selectedDevice.id}) 上运行`;
         } else if (devices.length > 0) {
-            this.runStatusBarItem.text = '$(warning) ▶️ Select Device';
-            this.runStatusBarItem.tooltip = 'Click to select a device';
+            this.runStatusBarItem.text = '[运行] 选择设备';
+            this.runStatusBarItem.tooltip = '点击选择设备';
         } else {
-            this.runStatusBarItem.text = '$(warning) ▶️ No Device';
-            this.runStatusBarItem.tooltip = 'No devices connected';
+            this.runStatusBarItem.text = '[运行] 无设备';
+            this.runStatusBarItem.tooltip = '没有已连接的设备';
         }
     }
 
     private getDisplayName(device: { id: string; type: string; model?: string; product?: string }): string {
-        // Prefer model name, then product, then first 15 chars of ID
         return device.model || device.product || device.id.substring(0, Math.min(device.id.length, 15));
     }
 

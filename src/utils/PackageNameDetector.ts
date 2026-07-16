@@ -7,7 +7,7 @@ import { promisify } from 'util';
 const execAsync = promisify(exec);
 
 /**
- * Result of package name detection with source and confidence
+ * 包名检测结果，包含来源和可信度
  */
 export interface PackageDetectionResult {
     packageName: string;
@@ -16,12 +16,12 @@ export interface PackageDetectionResult {
 }
 
 /**
- * Smart package name detection from multiple sources.
- * Prioritizes built APK, then Gradle, then foreground app.
+ * 智能包名检测器，从多个来源获取包名。
+ * 优先级：已构建 APK > build.gradle > 前台应用 > 已安装应用。
  */
 export class PackageNameDetector {
     /**
-     * Smart system: Try all methods in order (best for developers)
+     * 智能检测：按优先级依次尝试所有方法
      */
     static async detectPackageNameSmart(
         adbPath?: string,
@@ -30,8 +30,7 @@ export class PackageNameDetector {
     ): Promise<PackageDetectionResult[]> {
         const results: PackageDetectionResult[] = [];
 
-        // Priority 1: From built APK (most accurate - 100%)
-        // Developer wants to debug the app they built!
+        // 优先级 1：从已构建 APK 获取（最准确）
         if (gradlePath) {
             const apkPackage = await this.getPackageFromBuiltApk(gradlePath);
             if (apkPackage) {
@@ -43,7 +42,7 @@ export class PackageNameDetector {
             }
         }
 
-        // Priority 2: From build.gradle with Build Variants (very good)
+        // 优先级 2：从 build.gradle 获取
         const gradlePackage = await this.detectPackageName();
         if (gradlePackage) {
             results.push({
@@ -53,12 +52,10 @@ export class PackageNameDetector {
             });
         }
 
-        // Priority 3: From foreground app on device (informational only)
-        // Can be useful, but not priority for developers
+        // 优先级 3：从设备前台应用获取
         if (adbPath && deviceId) {
             const foregroundPackage = await this.getForegroundPackage(adbPath, deviceId);
             if (foregroundPackage) {
-                // Only add if not already in results
                 if (!results.find(r => r.packageName === foregroundPackage)) {
                     results.push({
                         packageName: foregroundPackage,
@@ -69,14 +66,14 @@ export class PackageNameDetector {
             }
         }
 
-        // Priority 4: Search device for matching packages
+        // 优先级 4：搜索设备上匹配的包名
         if (adbPath && deviceId && gradlePackage) {
             const devicePackages = await this.findMatchingPackageOnDevice(
                 adbPath,
                 deviceId,
                 gradlePackage
             );
-            
+
             devicePackages.forEach(pkg => {
                 if (!results.find(r => r.packageName === pkg)) {
                     results.push({
@@ -92,132 +89,126 @@ export class PackageNameDetector {
     }
 
     /**
-     * Get Package Name from built APK (most accurate!)
+     * 从已构建的 APK 获取包名（最准确）
      */
     static async getPackageFromBuiltApk(projectRoot: string): Promise<string | null> {
         try {
-            // Search for APK in common build paths
             const apkPaths = [
                 path.join(projectRoot, 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk'),
                 path.join(projectRoot, 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk'),
                 path.join(projectRoot, 'build', 'outputs', 'apk', 'debug', 'app-debug.apk')
             ];
 
-            console.log('🔍 Searching for built APK...');
-            
+            console.log('Searching for built APK...');
+
             for (const apkPath of apkPaths) {
                 console.log(`  Checking: ${apkPath}`);
-                
+
                 if (fs.existsSync(apkPath)) {
-                    console.log(`✅ Found APK: ${apkPath}`);
+                    console.log(`Found APK: ${apkPath}`);
                     const packageName = await this.extractPackageFromApk(apkPath);
-                    
+
                     if (packageName) {
-                        console.log(`✅ Package from built APK (${path.basename(apkPath)}): ${packageName}`);
+                        console.log(`Package from built APK (${path.basename(apkPath)}): ${packageName}`);
                         return packageName;
                     } else {
-                        console.log(`⚠️ Failed to extract package from ${path.basename(apkPath)}`);
+                        console.log(`Failed to extract package from ${path.basename(apkPath)}`);
                     }
                 } else {
                     console.log(`  Not found`);
                 }
             }
-            
-            console.log('ℹ️ No built APK found. Build the project first!');
+
+            console.log('No built APK found. Build the project first!');
         } catch (error) {
-            console.error('❌ Error getting package from built APK:', error);
+            console.error('Error getting package from built APK:', error);
         }
 
         return null;
     }
 
     /**
-     * Extract Package Name from APK using aapt
+     * 使用 aapt 从 APK 中提取包名
      */
     private static async extractPackageFromApk(apkPath: string): Promise<string | null> {
         try {
-            // Try 1: Use aapt from Android SDK
             const sdkPath = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT;
-            
+
             if (sdkPath) {
-                // Search in build-tools (using fs instead of exec to avoid memory leak)
                 const buildToolsPath = path.join(sdkPath, 'build-tools');
-                
+
                 if (fs.existsSync(buildToolsPath)) {
                     const buildToolVersions = fs.readdirSync(buildToolsPath).sort().reverse();
-                    
+
                     for (const version of buildToolVersions) {
                         const aaptExe = process.platform === 'win32' ? 'aapt.exe' : 'aapt';
                         const aaptPath = path.join(buildToolsPath, version, aaptExe);
-                        
+
                         if (fs.existsSync(aaptPath)) {
-                            console.log(`✅ Found aapt: ${aaptPath}`);
-                            
+                            console.log(`Found aapt: ${aaptPath}`);
+
                             try {
                                 const { stdout } = await execAsync(`"${aaptPath}" dump badging "${apkPath}"`);
                                 const match = stdout.match(/package:\s*name='([^']+)'/);
-                                
+
                                 if (match && match[1]) {
-                                    console.log(`✅ Extracted package: ${match[1]}`);
+                                    console.log(`Extracted package: ${match[1]}`);
                                     return match[1];
                                 }
                             } catch (error: any) {
-                                console.log(`⚠️ aapt failed: ${error.message}`);
+                                console.log(`aapt failed: ${error.message}`);
                             }
-                            
-                            break; // Found aapt, no need to search more
+
+                            break;
                         }
                     }
                 }
             }
 
-            // Try 2: aapt from PATH (simple)
+            // 备选：从 PATH 中查找 aapt
             try {
                 const { stdout } = await execAsync(`aapt dump badging "${apkPath}"`);
                 const match = stdout.match(/package:\s*name='([^']+)'/);
-                
+
                 if (match && match[1]) {
-                    console.log(`✅ Extracted package using aapt from PATH`);
+                    console.log('Extracted package using aapt from PATH');
                     return match[1];
                 }
             } catch (error) {
-                // aapt not in PATH
+                // aapt 不在 PATH 中
             }
 
-            console.log(`💡 Tip: aapt not found. Install Android SDK build-tools`);
-            
+            console.log('Tip: aapt not found. Install Android SDK build-tools');
+
         } catch (error) {
             console.error('Error extracting package from APK:', error);
         }
-        
+
         return null;
     }
 
     /**
-     * Get Package Name of foreground app (currently running)
+     * 获取前台应用的包名
      */
     static async getForegroundPackage(adbPath: string, deviceId: string): Promise<string | null> {
         try {
-            // Method 1: dumpsys window (most reliable)
             const { stdout } = await execAsync(
                 `"${adbPath}" -s ${deviceId} shell "dumpsys window | grep mCurrentFocus"`
             );
 
-            // Look for: mCurrentFocus=Window{... u0 com.example.app/...}
             const match = stdout.match(/mCurrentFocus=Window\{[^}]*\s+u\d+\s+([^\s\/]+)/);
             if (match && match[1]) {
-                console.log(`✅ Foreground package: ${match[1]}`);
+                console.log(`Foreground package: ${match[1]}`);
                 return match[1];
             }
 
-            // Method 2: dumpsys activity (alternative)
             const { stdout: activityOut } = await execAsync(
                 `"${adbPath}" -s ${deviceId} shell "dumpsys activity activities | grep mResumedActivity"`
             );
 
             const activityMatch = activityOut.match(/u\d+\s+([^\s\/]+)/);
             if (activityMatch && activityMatch[1]) {
-                console.log(`✅ Foreground package (from activity): ${activityMatch[1]}`);
+                console.log(`Foreground package (from activity): ${activityMatch[1]}`);
                 return activityMatch[1];
             }
 
@@ -229,7 +220,7 @@ export class PackageNameDetector {
     }
 
     /**
-     * Find the Android project root directory (mirrors GradleService.findProjectRoot).
+     * 查找 Android 项目根目录（与 GradleService.findProjectRoot 对应）
      */
     private static findProjectRoot(): string | null {
         const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
@@ -237,7 +228,6 @@ export class PackageNameDetector {
 
         const rootPath = workspaceFolder.uri.fsPath;
 
-        // Check if workspace root is project root
         const isRoot = (dir: string): boolean => {
             const hasSettings = fs.existsSync(path.join(dir, 'settings.gradle')) ||
                                fs.existsSync(path.join(dir, 'settings.gradle.kts'));
@@ -264,7 +254,7 @@ export class PackageNameDetector {
     }
 
     /**
-     * Extract Package Name from project (with Build Variants support)
+     * 从项目中提取包名（支持构建变体）
      */
     static async detectPackageName(): Promise<string | null> {
         const projectRoot = this.findProjectRoot();
@@ -272,13 +262,11 @@ export class PackageNameDetector {
             return null;
         }
 
-        // Try 1: From build.gradle with Build Variants
         const packageFromGradle = await this.extractFromBuildGradle(projectRoot);
         if (packageFromGradle) {
             return packageFromGradle;
         }
 
-        // Try 2: From AndroidManifest.xml
         const packageFromManifest = await this.extractFromManifest(projectRoot);
         if (packageFromManifest) {
             return packageFromManifest;
@@ -288,7 +276,7 @@ export class PackageNameDetector {
     }
 
     /**
-     * Extract from build.gradle with Build Variants support
+     * 从 build.gradle 提取包名（支持构建变体）
      */
     private static async extractFromBuildGradle(projectRoot: string): Promise<string | null> {
         const buildGradlePaths = [
@@ -302,25 +290,22 @@ export class PackageNameDetector {
             if (fs.existsSync(gradlePath)) {
                 try {
                     const content = fs.readFileSync(gradlePath, 'utf-8');
-                    
-                    // Look for base applicationId
+
                     const basePackageMatch = content.match(/applicationId\s+["']([^"']+)["']/);
                     const namespaceMatch = content.match(/namespace\s*=\s*["']([^"']+)["']/);
-                    
+
                     const basePackage = basePackageMatch?.[1] || namespaceMatch?.[1];
-                    
+
                     if (basePackage) {
-                        // Look for applicationIdSuffix for debug
                         const debugSuffixMatch = content.match(/debug\s*{[^}]*applicationIdSuffix\s+["']([^"']+)["']/s);
-                        
+
                         if (debugSuffixMatch && debugSuffixMatch[1]) {
-                            // If debug suffix found
                             const debugPackage = basePackage + debugSuffixMatch[1];
-                            console.log(`✅ Found debug package: ${debugPackage} (base: ${basePackage})`);
+                            console.log(`Found debug package: ${debugPackage} (base: ${basePackage})`);
                             return debugPackage;
                         }
-                        
-                        console.log(`✅ Package name found: ${basePackage}`);
+
+                        console.log(`Package name found: ${basePackage}`);
                         return basePackage;
                     }
                 } catch (error) {
@@ -333,7 +318,7 @@ export class PackageNameDetector {
     }
 
     /**
-     * Extract from AndroidManifest.xml
+     * 从 AndroidManifest.xml 提取包名
      */
     private static async extractFromManifest(projectRoot: string): Promise<string | null> {
         const manifestPaths = [
@@ -346,10 +331,10 @@ export class PackageNameDetector {
             if (fs.existsSync(manifestPath)) {
                 try {
                     const content = fs.readFileSync(manifestPath, 'utf-8');
-                    
+
                     const match = content.match(/package\s*=\s*["']([^"']+)["']/);
                     if (match && match[1]) {
-                        console.log(`✅ Package name found in manifest: ${match[1]}`);
+                        console.log(`Package name found in manifest: ${match[1]}`);
                         return match[1];
                     }
                 } catch (error) {
@@ -362,25 +347,25 @@ export class PackageNameDetector {
     }
 
     /**
-     * Get Package Name from APK (public wrapper)
+     * 从 APK 获取包名（公开包装器）
      */
     static async getPackageFromApk(apkPath: string): Promise<string | null> {
         return await this.extractPackageFromApk(apkPath);
     }
 
     /**
-     * Get list of installed packages on device
+     * 获取设备上已安装的包名列表
      */
     static async getInstalledPackages(adbPath: string, deviceId: string): Promise<string[]> {
         try {
             const { stdout } = await execAsync(`"${adbPath}" -s ${deviceId} shell pm list packages`);
-            
+
             const packages = stdout
                 .split('\n')
                 .filter(line => line.startsWith('package:'))
                 .map(line => line.replace('package:', '').trim())
                 .filter(pkg => pkg.length > 0);
-            
+
             return packages;
         } catch (error) {
             console.error('Error getting installed packages:', error);
@@ -389,7 +374,7 @@ export class PackageNameDetector {
     }
 
     /**
-     * Find matching Package Names on device
+     * 在设备上查找匹配的包名
      */
     static async findMatchingPackageOnDevice(
         adbPath: string,
@@ -397,38 +382,27 @@ export class PackageNameDetector {
         basePackage: string
     ): Promise<string[]> {
         const allPackages = await this.getInstalledPackages(adbPath, deviceId);
-        
-        // Find packages starting with base name
+
         const matches = allPackages.filter(pkg => pkg.startsWith(basePackage));
-        
+
         return matches;
     }
 
     /**
-     * Show Package Names with sources in Quick Pick
+     * 显示包名选择对话框（按可信度排序）
      */
     static async promptForPackageName(
         detectionResults: PackageDetectionResult[]
     ): Promise<string | null> {
         const items: any[] = [];
 
-        // Sort results by confidence
         const sortedResults = detectionResults.sort((a, b) => {
             const confidenceOrder = { high: 0, medium: 1, low: 2 };
             return confidenceOrder[a.confidence] - confidenceOrder[b.confidence];
         });
 
-        // Show results with icons by source
         sortedResults.forEach((result, index) => {
-            const icons = {
-                apk: '📦',
-                foreground: '▶️',
-                gradle: '⚙️',
-                manifest: '📄',
-                device: '📱'
-            };
-
-            const descriptions = {
+            const sourceNames = {
                 apk: 'From built APK (100% accurate)',
                 foreground: 'Currently foreground app',
                 gradle: 'From build.gradle',
@@ -437,28 +411,25 @@ export class PackageNameDetector {
             };
 
             items.push({
-                label: `${icons[result.source]} ${result.packageName}`,
-                description: descriptions[result.source],
+                label: `${result.packageName}`,
+                description: sourceNames[result.source],
                 packageName: result.packageName,
-                picked: index === 0, // Select first (highest confidence)
-                detail: result.confidence === 'high' ? '✅ Recommended' : ''
+                picked: index === 0,
+                detail: result.confidence === 'high' ? 'Recommended' : ''
             });
         });
 
-        // Remove duplicates
         const uniqueItems = items.filter((item, index, self) =>
             index === self.findIndex(t => t.packageName === item.packageName)
         );
 
-        // Separator
         uniqueItems.push({
-            label: '─'.repeat(50),
+            label: '-'.repeat(50),
             kind: vscode.QuickPickItemKind.Separator
         });
 
-        // Manual input option
         uniqueItems.push({
-            label: '$(edit) Enter Package Name manually',
+            label: 'Enter Package Name manually',
             description: 'For custom input',
             packageName: null
         });
@@ -475,9 +446,8 @@ export class PackageNameDetector {
             return selected.packageName;
         }
 
-        // Manual input
         const input = await vscode.window.showInputBox({
-            prompt: 'Enter application Package Name',
+            prompt: '输入应用包名',
             placeHolder: 'com.example.app'
         });
 

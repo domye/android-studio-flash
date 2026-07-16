@@ -33,9 +33,12 @@ export class DeviceManager {
     // 防抖定时器，防止频繁刷新
     private refreshTimeout: NodeJS.Timeout | undefined;
 
-    constructor() {
-        this.sdkManager = new AndroidSDKManager();
-        this.refreshDevices();
+    // 标记是否已尝试过自动连接 127.0.0.1，避免重复尝试
+    private autoConnectLocalhostAttempted: boolean = false;
+
+    constructor(sdkManager?: AndroidSDKManager) {
+        this.sdkManager = sdkManager || new AndroidSDKManager();
+        // 不立即刷新，由 startMonitoring 中的 track-devices 事件驱动
         this.startMonitoring();
     }
 
@@ -116,10 +119,25 @@ export class DeviceManager {
                 this.selectedDevice = this.devices[0];
             }
 
+            // 自动检测 127.0.0.1:5555：无设备时尝试连接本地 ADB
+            if (this.devices.length === 0 && !this.autoConnectLocalhostAttempted) {
+                this.autoConnectLocalhostAttempted = true;
+                const adbPath = this.sdkManager.getADBPath();
+                execAsync(`"${adbPath}" connect 127.0.0.1:5555`, { timeout: 3000 })
+                    .then(() => {
+                        // 连接成功，刷新设备列表
+                        this.autoConnectLocalhostAttempted = false; // 允许下次再次尝试
+                        return this.refreshDevices();
+                    })
+                    .catch(() => {
+                        // 连接失败（无本地 ADB 守护进程），静默忽略
+                        console.log('未发现本地 ADB 守护进程 (127.0.0.1:5555)');
+                    });
+            }
+
             this.onDidChangeDevicesEmitter.fire();
         } catch(error: any) {
-            console.error('Failed to refresh devices:', error);
-            console.error('Error details:', error.message);
+            console.error('刷新设备失败:', error);
 
             this.devices = [];
 

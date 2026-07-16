@@ -2,12 +2,10 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-
-const execAsync = promisify(exec);
+import { spawn } from 'child_process';
 
 import { AndroidSDKManager } from './AndroidSDKManager';
+import { findProjectRoot as utilFindProjectRoot, isProjectRoot } from '../utils/projectUtils';
 
 /**
  * 执行 Gradle 任务和管理 Android 项目构建的服务。
@@ -23,58 +21,25 @@ export class GradleService {
 
     /**
      * 查找 Android 项目根目录。
-     * 在当前工作区和直接子目录中搜索 settings.gradle 或 build.gradle。
+     * 委托给共享工具函数。
      */
     public findProjectRoot(): string {
         const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
         if (!workspaceFolder) {
-            throw new Error('No workspace folder found');
+            throw new Error('未找到工作区目录');
         }
-
-        const rootPath = workspaceFolder.uri.fsPath;
-
-        // 1. 检查工作区根目录是否是项目根
-        if (this.isProjectRoot(rootPath)) {
-            return rootPath;
-        }
-
-        // 2. 检查直接子目录
-        try {
-            const subdirs = fs.readdirSync(rootPath)
-                .map(name => path.join(rootPath, name))
-                .filter(dir => fs.statSync(dir).isDirectory());
-
-            for (const dir of subdirs) {
-                if (this.isProjectRoot(dir)) {
-                    return dir;
-                }
-            }
-        } catch (error) {
-            console.warn('Error scanning subdirectories:', error);
-        }
-
-        // 若未找到则默认使用工作区根
-        return rootPath;
+        return utilFindProjectRoot(workspaceFolder.uri.fsPath);
     }
 
     /**
      * 判断目录是否为 Gradle 项目根
      */
-    private isProjectRoot(dirPath: string): boolean {
-        const hasSettings = fs.existsSync(path.join(dirPath, 'settings.gradle')) ||
-                           fs.existsSync(path.join(dirPath, 'settings.gradle.kts'));
-
-        const hasBuild = fs.existsSync(path.join(dirPath, 'build.gradle')) ||
-                        fs.existsSync(path.join(dirPath, 'build.gradle.kts'));
-
-        const hasWrapper = fs.existsSync(path.join(dirPath, 'gradlew')) ||
-                          fs.existsSync(path.join(dirPath, 'gradlew.bat'));
-
-        return (hasSettings || hasBuild) && hasWrapper;
+    public isProjectRoot(dirPath: string): boolean {
+        return isProjectRoot(dirPath);
     }
 
     /**
-     * 获取 Gradle Wrapper 路径
+     * 获取 Gradle Wrapper 路径，并确保 Unix 系统上有执行权限
      */
     private getGradlewPath(projectRoot: string): string {
         const isWindows = os.platform() === 'win32';
@@ -90,11 +55,15 @@ export class GradleService {
             }
         } else {
             if (fs.existsSync(wrapperShell)) {
+                // 确保 gradlew 可执行（对首次克隆的项目很重要）
+                try {
+                    fs.chmodSync(wrapperShell, 0o755);
+                } catch { /* 静默忽略权限设置失败 */ }
                 return wrapperShell;
             }
         }
 
-        throw new Error(`Gradle wrapper not found in ${projectRoot}. Make sure you are in an Android project directory.`);
+        throw new Error(`在 ${projectRoot} 中未找到 Gradle wrapper。请确认你在 Android 项目目录中。`);
     }
 
     private targetModule: string | null = null;
@@ -117,75 +86,93 @@ export class GradleService {
     /**
      * 执行 Gradle 任务
      */
-    async executeGradleTask(task: string, showOutput: boolean = true): Promise<string> {
-        try {
-            const projectRoot = this.findProjectRoot();
-            const gradlew = this.getGradlewPath(projectRoot);
+    async executeGradleTask(task: string, showOutput: boolean = true, timeoutMs: number = 600000): Promise<string> {
+        const projectRoot = this.findProjectRoot();
+        const gradlew = this.getGradlewPath(projectRoot);
 
-            // 若设置了模块则添加模块前缀
-            let finalTask = task;
-            if (this.targetModule && !task.startsWith(':') && !task.includes(' ')) {
-                finalTask = `${this.targetModule}:${task}`;
+        // 若设置了模块则添加模块前缀
+        let finalTask = task;
+        if (this.targetModule && !task.startsWith(':') && !task.includes(' ')) {
+            finalTask = `${this.targetModule}:${task}`;
+        }
+
+        if (showOutput) {
+            this.outputChannel.show(true);
+            this.outputChannel.appendLine(`正在执行: ${finalTask}`);
+            if (this.targetModule) {
+                this.outputChannel.appendLine(`目标模块: ${this.targetModule}`);
             }
+            this.outputChannel.appendLine(`项目根目录: ${projectRoot}`);
+            this.outputChannel.appendLine('='.repeat(50));
+        }
 
-            if (showOutput) {
-                this.outputChannel.show(true);
-                this.outputChannel.appendLine(`正在执行: ${finalTask}`);
-                if (this.targetModule) {
-                     this.outputChannel.appendLine(`目标模块: ${this.targetModule}`);
-                }
-                this.outputChannel.appendLine(`项目根目录: ${projectRoot}`);
-                this.outputChannel.appendLine('='.repeat(50));
+        await this.ensureLocalProperties(projectRoot);
+
+        let command = `"${gradlew}" ${finalTask}`;
+
+        // Windows 兼容性：若只有 shell 脚本则通过 Java 直接运行
+        if (os.platform() === 'win32' && !gradlew.endsWith('.bat')) {
+            const jarPath = path.join(projectRoot, 'gradle', 'wrapper', 'gradle-wrapper.jar');
+            if (fs.existsSync(jarPath)) {
+                command = `java -Dorg.gradle.appname=gradlew -cp "${jarPath}" org.gradle.wrapper.GradleWrapperMain ${finalTask}`;
+                if (showOutput) this.outputChannel.appendLine('通过 Java 运行 Gradle（Windows 兼容模式）');
+            } else {
+                await this.ensureUnixLineEndings(gradlew);
+                command = `bash "./gradlew" ${finalTask}`;
             }
+        }
 
-            await this.ensureLocalProperties(projectRoot);
-
-            let command = `"${gradlew}" ${finalTask}`;
-
-            // Windows 兼容性：若只有 shell 脚本则通过 Java 直接运行
-            if (os.platform() === 'win32' && !gradlew.endsWith('.bat')) {
-                const jarPath = path.join(projectRoot, 'gradle', 'wrapper', 'gradle-wrapper.jar');
-                if (fs.existsSync(jarPath)) {
-                    command = `java -Dorg.gradle.appname=gradlew -cp "${jarPath}" org.gradle.wrapper.GradleWrapperMain ${finalTask}`;
-                    this.outputChannel.appendLine('通过 Java 运行 Gradle（Windows 兼容模式）');
-                } else {
-                    await this.ensureUnixLineEndings(gradlew);
-                    command = `bash "./gradlew" ${finalTask}`;
-                }
-            }
-
-            const { stdout, stderr } = await execAsync(command, {
+        return new Promise<string>((resolve, reject) => {
+            const proc = spawn(command, [], {
                 cwd: projectRoot,
-                maxBuffer: 10 * 1024 * 1024,
+                shell: true,
                 env: { ...process.env, JAVA_HOME: process.env.JAVA_HOME }
             });
 
-            if (showOutput) {
-                if (stdout) {
-                    this.outputChannel.appendLine(stdout);
-                }
-                if (stderr) {
-                    this.outputChannel.appendLine('警告:');
-                    this.outputChannel.appendLine(stderr);
-                }
-                this.outputChannel.appendLine('='.repeat(50));
-                this.outputChannel.appendLine('任务已完成！');
-            }
+            let stdout = '';
+            let stderr = '';
 
-            return stdout;
+            const timeoutTimer = setTimeout(() => {
+                proc.kill();
+                reject(new Error(`Gradle 任务超时 (${timeoutMs / 1000}秒): ${finalTask}`));
+            }, timeoutMs);
 
-        } catch (error: any) {
-            this.outputChannel.appendLine('='.repeat(50));
-            this.outputChannel.appendLine('任务失败！');
-            this.outputChannel.appendLine(error.message);
-            if (error.stdout) {
-                this.outputChannel.appendLine(error.stdout);
-            }
-            if (error.stderr) {
-                this.outputChannel.appendLine(error.stderr);
-            }
-            throw error;
-        }
+            proc.stdout?.on('data', (data: Buffer) => {
+                const text = data.toString();
+                stdout += text;
+                if (showOutput) {
+                    this.outputChannel.append(text);
+                }
+            });
+
+            proc.stderr?.on('data', (data: Buffer) => {
+                const text = data.toString();
+                stderr += text;
+                if (showOutput) {
+                    this.outputChannel.append(text);
+                }
+            });
+
+            proc.on('close', (code) => {
+                clearTimeout(timeoutTimer);
+                if (showOutput) {
+                    this.outputChannel.appendLine('');
+                    this.outputChannel.appendLine('='.repeat(50));
+                }
+                if (code === 0) {
+                    if (showOutput) this.outputChannel.appendLine('任务已完成！');
+                    resolve(stdout);
+                } else {
+                    if (showOutput) this.outputChannel.appendLine(`任务失败！(退出码: ${code})`);
+                    reject(new Error(`Gradle 任务失败，退出码 ${code}: ${finalTask}`));
+                }
+            });
+
+            proc.on('error', (err) => {
+                clearTimeout(timeoutTimer);
+                reject(new Error(`无法启动 Gradle 进程: ${err.message}`));
+            });
+        });
     }
 
     /**
@@ -345,9 +332,9 @@ export class GradleService {
      */
     isAndroidProject(): boolean {
         try {
-            const projectRoot = this.findProjectRoot();
-            return this.isProjectRoot(projectRoot);
-        } catch (error) {
+            const root = this.findProjectRoot();
+            return isProjectRoot(root);
+        } catch {
             return false;
         }
     }

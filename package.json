@@ -47,113 +47,113 @@
     "commands": [
       {
         "command": "android.buildApk",
-        "title": "📦 Build APK",
+        "title": "构建 APK",
         "category": "Android"
       },
       {
         "command": "android.buildDebug",
-        "title": "🔨 Build Debug APK",
+        "title": "构建 Debug APK",
         "category": "Android"
       },
       {
         "command": "android.buildRelease",
-        "title": "📦 Build Release APK",
+        "title": "构建 Release APK",
         "category": "Android"
       },
       {
         "command": "android.cleanProject",
-        "title": "🧹 Clean Project",
+        "title": "清理项目",
         "category": "Android"
       },
       {
         "command": "android.syncGradle",
-        "title": "🔄 Sync Gradle",
+        "title": "同步 Gradle",
         "category": "Android"
       },
       {
         "command": "android.runApp",
-        "title": "▶️ Run on Device",
+        "title": "运行到设备",
         "category": "Android"
       },
       {
         "command": "android.debugApp",
-        "title": "🐛 Debug on Device",
+        "title": "调试到设备",
         "category": "Android"
       },
       {
         "command": "android.selectDevice",
-        "title": "📱 Select Device",
+        "title": "选择设备",
         "category": "Android"
       },
       {
         "command": "android.selectDeviceFromTree",
-        "title": "📱 Select Device from Tree",
+        "title": "从树形面板选择设备",
         "category": "Android"
       },
       {
         "command": "android.refreshDevices",
-        "title": "🔄 Refresh Devices",
+        "title": "刷新设备",
         "category": "Android",
         "icon": "$(refresh)"
       },
       {
         "command": "android.showLogcat",
-        "title": "📋 Show Logcat",
+        "title": "显示 Logcat",
         "category": "Android"
       },
       {
         "command": "android.toggleLogcatFilter",
-        "title": "🔍 Change Logcat Filter Mode",
+        "title": "切换 Logcat 过滤模式",
         "category": "Android"
       },
       {
         "command": "android.stopLogcat",
-        "title": "⏹️ Stop Logcat",
+        "title": "停止 Logcat",
         "category": "Android"
       },
       {
         "command": "android.clearLogcat",
-        "title": "🗑️ Clear Logcat",
+        "title": "清空 Logcat",
         "category": "Android"
       },
       {
         "command": "android.forgetWirelessDevice",
-        "title": "🗑️ Forget Wireless Device",
+        "title": "忘记无线设备",
         "category": "Android"
       },
       {
         "command": "android.reconnectWirelessDevice",
-        "title": "🔄 Reconnect Wireless Device",
+        "title": "重连无线设备",
         "category": "Android"
       },
       {
         "command": "android.runDiagnostics",
-        "title": "🔍 Run Diagnostics",
+        "title": "运行诊断",
         "category": "Android"
       },
       {
         "command": "android.setupWireless",
-        "title": "➕ Setup Wireless Connection",
+        "title": "设置无线连接",
         "category": "Android"
       },
       {
         "command": "android.disconnectWireless",
-        "title": "❌ Disconnect Wireless Device",
+        "title": "断开无线设备",
         "category": "Android"
       },
       {
         "command": "android.refreshWireless",
-        "title": "🔄 Refresh Wireless Devices",
+        "title": "刷新无线设备",
         "category": "Android"
       },
       {
         "command": "android.createKeystore",
-        "title": "🔐 Create Signing Keystore",
+        "title": "创建签名密钥",
         "category": "Android"
       },
       {
         "command": "android.selectModule",
-        "title": "🎯 Select Target Module",
+        "title": "选择目标模块",
         "category": "Android",
         "icon": "$(package)"
       }

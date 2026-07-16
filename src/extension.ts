@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fs from 'fs';
 import { AndroidSDKManager } from './core/AndroidSDKManager';
 import { GradleService } from './core/GradleService';
 import { GradleModuleService } from './core/GradleModuleService';
@@ -13,38 +12,8 @@ import { WirelessADBManager } from './wireless/WirelessADBManager';
 import { KeystoreManager } from './signing/KeystoreManager';
 import { SigningWizard } from './signing/SigningWizard';
 import { runDiagnostics } from './utils/diagnostics';
+import { isAndroidWorkspace } from './utils/projectUtils';
 
-/**
- * 快速检查工作区是否为 Android 项目。
- * 避免在无关项目（如有 build.gradle 的 npm 包）中激活。
- */
-function isAndroidWorkspace(rootPath: string): boolean {
-    const hasSettings = fs.existsSync(path.join(rootPath, 'settings.gradle')) ||
-                        fs.existsSync(path.join(rootPath, 'settings.gradle.kts'));
-    const hasWrapper = fs.existsSync(path.join(rootPath, 'gradlew')) ||
-                       fs.existsSync(path.join(rootPath, 'gradlew.bat'));
-    const hasAppBuild = fs.existsSync(path.join(rootPath, 'app', 'build.gradle')) ||
-                        fs.existsSync(path.join(rootPath, 'app', 'build.gradle.kts'));
-
-    if (hasSettings || hasWrapper || hasAppBuild) {
-        return true;
-    }
-
-    // 检查一级子目录（兼容 android/ 子目录结构，如 Flutter 项目）
-    try {
-        const subdirs = fs.readdirSync(rootPath)
-            .map((n: string) => path.join(rootPath, n))
-            .filter((d: string) => fs.statSync(d).isDirectory());
-        return subdirs.some((dir: string) =>
-            fs.existsSync(path.join(dir, 'settings.gradle')) ||
-            fs.existsSync(path.join(dir, 'settings.gradle.kts')) ||
-            fs.existsSync(path.join(dir, 'gradlew')) ||
-            fs.existsSync(path.join(dir, 'gradlew.bat'))
-        );
-    } catch {
-        return false;
-    }
-}
 
 let deviceManager: DeviceManager;
 let buildSystem: BuildSystem;
@@ -57,7 +26,7 @@ export async function activate(context: vscode.ExtensionContext) {
     // 提前退出：仅对 Android 项目激活
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder || !isAndroidWorkspace(workspaceFolder.uri.fsPath)) {
-        console.log('Not an Android project, skipping activation');
+        console.log('非 Android 项目，跳过激活');
         return;
     }
 
@@ -67,7 +36,7 @@ export async function activate(context: vscode.ExtensionContext) {
         const sdkManager = new AndroidSDKManager();
         const gradleService = new GradleService(sdkManager);
         const gradleModuleService = new GradleModuleService();
-        deviceManager = new DeviceManager();
+        deviceManager = new DeviceManager(sdkManager);
         statusBar = new BuildStatusBar(deviceManager);
         buildSystem = new BuildSystem(gradleService, deviceManager, statusBar);
         logcatManager = new LogcatManager(deviceManager, sdkManager);

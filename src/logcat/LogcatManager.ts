@@ -1,12 +1,12 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fs from 'fs';
 import { spawn, ChildProcess } from 'child_process';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { DeviceManager } from '../devices/DeviceManager';
 import { AndroidSDKManager } from '../core/AndroidSDKManager';
 import { PackageNameDetector } from '../utils/PackageNameDetector';
+import { findProjectRoot as utilFindProjectRoot } from '../utils/projectUtils';
 
 const execAsync = promisify(exec);
 
@@ -36,31 +36,7 @@ export class LogcatManager {
     private findProjectRoot(): string | undefined {
         const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
         if (!workspaceFolder) return undefined;
-
-        const rootPath = workspaceFolder.uri.fsPath;
-
-        const isRoot = (dir: string): boolean => {
-            const hasSettings = fs.existsSync(path.join(dir, 'settings.gradle')) ||
-                               fs.existsSync(path.join(dir, 'settings.gradle.kts'));
-            const hasBuild = fs.existsSync(path.join(dir, 'build.gradle')) ||
-                            fs.existsSync(path.join(dir, 'build.gradle.kts'));
-            const hasWrapper = fs.existsSync(path.join(dir, 'gradlew')) ||
-                              fs.existsSync(path.join(dir, 'gradlew.bat'));
-            return (hasSettings || hasBuild) && hasWrapper;
-        };
-
-        if (isRoot(rootPath)) return rootPath;
-
-        try {
-            const subdirs = fs.readdirSync(rootPath)
-                .map(name => path.join(rootPath, name))
-                .filter(dir => fs.statSync(dir).isDirectory());
-            for (const dir of subdirs) {
-                if (isRoot(dir)) return dir;
-            }
-        } catch { /* ignore */ }
-
-        return rootPath;
+        return utilFindProjectRoot(workspaceFolder.uri.fsPath);
     }
 
     /**

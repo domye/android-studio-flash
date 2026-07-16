@@ -201,32 +201,37 @@ export class WirelessADBManager {
     }
 
     /**
-     * 启动时自动重连已保存的设备
+     * 启动时自动重连已保存的设备（限制并发数为 2，避免 ADB 过载）
      */
     async autoReconnectSavedDevices(): Promise<void> {
         const saved = await this.loadWirelessDevices();
 
         if (saved.length === 0) {
-            console.log('No saved wireless devices to reconnect');
+            console.log('没有需要重连的已保存设备');
             return;
         }
 
-        console.log(`Attempting to reconnect ${saved.length} saved devices...`);
+        console.log(`尝试重连 ${saved.length} 个已保存设备...`);
 
-        const reconnectPromises = saved.map(device =>
-            this.attemptReconnect(device)
-        );
+        const CONCURRENCY = 2;
+        let successCount = 0;
+        let failCount = 0;
 
-        const results = await Promise.allSettled(reconnectPromises);
-
-        const successCount = results.filter(r => r.status === 'fulfilled' && r.value).length;
-        const failCount = results.length - successCount;
+        // 分批并发，每批最多 CONCURRENCY 个
+        for (let i = 0; i < saved.length; i += CONCURRENCY) {
+            const batch = saved.slice(i, i + CONCURRENCY);
+            const results = await Promise.allSettled(
+                batch.map(device => this.attemptReconnect(device))
+            );
+            successCount += results.filter(r => r.status === 'fulfilled' && r.value).length;
+            failCount += results.filter(r => r.status === 'rejected' || !r.value).length;
+        }
 
         if (successCount > 0) {
-            console.log(`Reconnected ${successCount} device(s)`);
+            console.log(`成功重连 ${successCount} 个设备`);
         }
         if (failCount > 0) {
-            console.warn(`Failed to reconnect ${failCount} device(s)`);
+            console.warn(`重连失败 ${failCount} 个设备`);
         }
 
         this.onDidChangeDevicesEmitter.fire();

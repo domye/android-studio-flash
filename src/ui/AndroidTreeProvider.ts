@@ -8,6 +8,14 @@ import { GradleModuleService } from '../core/GradleModuleService';
 
 type TreeItemType = 'header' | 'device' | 'action' | 'empty' | 'wireless-device' | 'module';
 
+// TreeView 节点标签常量，消除硬编码字符串路由
+const TREE_SECTIONS = {
+    BUILD: '构建操作',
+    DEVICES: '设备',
+    TOOLS: '工具',
+    MODULE_PREFIX: '目标模块:',
+} as const;
+
 /**
  * Android 控制面板的树形数据提供者
  */
@@ -39,19 +47,19 @@ export class AndroidTreeProvider implements vscode.TreeDataProvider<AndroidTreeI
     async getChildren(element?: AndroidTreeItem): Promise<AndroidTreeItem[]> {
         if (!element) {
             return [
-                new AndroidTreeItem('Build Actions', '', 'header', vscode.TreeItemCollapsibleState.Expanded),
-                new AndroidTreeItem('Devices', '', 'header', vscode.TreeItemCollapsibleState.Expanded),
-                new AndroidTreeItem('Tools', '', 'header', vscode.TreeItemCollapsibleState.Expanded)
+                new AndroidTreeItem(TREE_SECTIONS.BUILD, '', 'header', vscode.TreeItemCollapsibleState.Expanded),
+                new AndroidTreeItem(TREE_SECTIONS.DEVICES, '', 'header', vscode.TreeItemCollapsibleState.Expanded),
+                new AndroidTreeItem(TREE_SECTIONS.TOOLS, '', 'header', vscode.TreeItemCollapsibleState.Expanded)
             ];
         }
 
-        if (element.label === 'Build Actions') {
+        if (element.label === TREE_SECTIONS.BUILD) {
             const children: AndroidTreeItem[] = [];
 
             const currentModule = this.gradleService.getTargetModule() || '(项目根目录)';
 
             const moduleItem = new AndroidTreeItem(
-                `Target: ${currentModule}`,
+                `${TREE_SECTIONS.MODULE_PREFIX} ${currentModule}`,
                 '',
                 'header',
                 vscode.TreeItemCollapsibleState.Collapsed
@@ -59,16 +67,16 @@ export class AndroidTreeProvider implements vscode.TreeDataProvider<AndroidTreeI
             moduleItem.contextValue = 'androidModuleGroup';
             children.push(moduleItem);
 
-            children.push(new AndroidTreeItem('Build & Run', 'android.runApp', 'action'));
-            children.push(new AndroidTreeItem('Build Debug APK', 'android.buildDebug', 'action'));
-            children.push(new AndroidTreeItem('Build Release APK', 'android.buildRelease', 'action'));
-            children.push(new AndroidTreeItem('Clean Project', 'android.cleanProject', 'action'));
-            children.push(new AndroidTreeItem('Sync Gradle', 'android.syncGradle', 'action'));
+            children.push(new AndroidTreeItem('构建并运行', 'android.runApp', 'action'));
+            children.push(new AndroidTreeItem('构建 Debug APK', 'android.buildDebug', 'action'));
+            children.push(new AndroidTreeItem('构建 Release APK', 'android.buildRelease', 'action'));
+            children.push(new AndroidTreeItem('清理项目', 'android.cleanProject', 'action'));
+            children.push(new AndroidTreeItem('同步 Gradle', 'android.syncGradle', 'action'));
 
             return children;
         }
 
-        if (element.label.startsWith('Target:')) {
+        if (element.label && element.label.startsWith(TREE_SECTIONS.MODULE_PREFIX)) {
             const items: AndroidTreeItem[] = [];
             try {
                 const root = this.gradleService.findProjectRoot();
@@ -91,23 +99,23 @@ export class AndroidTreeProvider implements vscode.TreeDataProvider<AndroidTreeI
 
                     item.command = {
                         command: 'android.selectModuleFromTree',
-                        title: 'Select Module',
+                        title: '选择模块',
                         arguments: [module]
                     };
 
                     if (isSelected) {
-                        item.description = 'Active';
+                        item.description = '当前';
                     }
 
                     items.push(item);
                 });
-            } catch (error) {
-                items.push(new AndroidTreeItem('Error loading modules', '', 'empty'));
+            } catch {
+                items.push(new AndroidTreeItem('加载模块出错', '', 'empty'));
             }
             return items;
         }
 
-        if (element.label === 'Devices') {
+        if (element.label === TREE_SECTIONS.DEVICES) {
             const items: AndroidTreeItem[] = [];
             const devices = this.deviceManager.getDevices();
             const selectedDevice = this.deviceManager.getSelectedDevice();
@@ -120,29 +128,29 @@ export class AndroidTreeProvider implements vscode.TreeDataProvider<AndroidTreeI
                     item.device = device;
                     item.command = {
                         command: 'android.selectDeviceFromTree',
-                        title: 'Select Device',
+                        title: '选择设备',
                         arguments: [device]
                     };
                     items.push(item);
                 });
             } else {
-                items.push(new AndroidTreeItem('No devices connected', '', 'empty'));
+                items.push(new AndroidTreeItem('没有已连接的设备', '', 'empty'));
             }
 
-            items.push(new AndroidTreeItem('Add Wireless Device', 'android.setupWireless', 'action'));
-            items.push(new AndroidTreeItem('Refresh Devices', 'android.refreshDevices', 'action'));
+            items.push(new AndroidTreeItem('添加无线设备', 'android.setupWireless', 'action'));
+            items.push(new AndroidTreeItem('刷新设备', 'android.refreshDevices', 'action'));
 
             return items;
         }
 
-        if (element.label === 'Tools') {
+        if (element.label === TREE_SECTIONS.TOOLS) {
             return [
-                new AndroidTreeItem('Show Logcat', 'android.showLogcat', 'action'),
-                new AndroidTreeItem('Logcat Filter Mode', 'android.toggleLogcatFilter', 'action'),
-                new AndroidTreeItem('Clear Logcat', 'android.clearLogcat', 'action'),
-                new AndroidTreeItem('Stop Logcat', 'android.stopLogcat', 'action'),
-                new AndroidTreeItem('Create Signing Key', 'android.createKeystore', 'action'),
-                new AndroidTreeItem('Run Diagnostics', 'android.runDiagnostics', 'action')
+                new AndroidTreeItem('显示 Logcat', 'android.showLogcat', 'action'),
+                new AndroidTreeItem('Logcat 过滤模式', 'android.toggleLogcatFilter', 'action'),
+                new AndroidTreeItem('清空 Logcat', 'android.clearLogcat', 'action'),
+                new AndroidTreeItem('停止 Logcat', 'android.stopLogcat', 'action'),
+                new AndroidTreeItem('创建签名密钥', 'android.createKeystore', 'action'),
+                new AndroidTreeItem('运行诊断', 'android.runDiagnostics', 'action')
             ];
         }
 

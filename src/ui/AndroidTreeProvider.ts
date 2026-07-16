@@ -150,6 +150,7 @@ export class AndroidTreeProvider implements vscode.TreeDataProvider<AndroidTreeI
                 new AndroidTreeItem('清空 Logcat', 'android.clearLogcat', 'action'),
                 new AndroidTreeItem('停止 Logcat', 'android.stopLogcat', 'action'),
                 new AndroidTreeItem('创建签名密钥', 'android.createKeystore', 'action'),
+                new AndroidTreeItem('选择已有密钥', 'android.selectKeystore', 'action'),
                 new AndroidTreeItem('运行诊断', 'android.runDiagnostics', 'action')
             ];
         }

@@ -148,6 +148,12 @@ export async function activate(context: vscode.ExtensionContext) {
         );
 
         context.subscriptions.push(
+            vscode.commands.registerCommand('android.selectKeystore', async () => {
+                await keystoreManager.selectExistingKeystore();
+            })
+        );
+
+        context.subscriptions.push(
             vscode.commands.registerCommand('android.runApp', async () => {
                 await buildSystem.runApp();
             })

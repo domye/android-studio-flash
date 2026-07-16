@@ -2,10 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-
-const execAsync = promisify(exec);
+import { spawn } from 'child_process';
 
 /**
  * 证书信息，用于生成 keystore
@@ -43,6 +40,30 @@ export class KeystoreManager {
     constructor(private context: vscode.ExtensionContext) {}
 
     /**
+     * 使用 spawn + args 数组执行 keytool 命令（绕开 cmd.exe 编码问题）
+     */
+    private async execKeytool(args: string[]): Promise<string> {
+        const keytool = await this.getKeytoolPath();
+        // Windows 中文环境下 keytool 输出 GBK，需要用 GBK 解码
+        const decoder = os.platform() === 'win32' ? new TextDecoder('gbk') : new TextDecoder('utf-8');
+        return new Promise<string>((resolve, reject) => {
+            const proc = spawn(keytool, args, { shell: false });
+            let stdout = '';
+            let stderr = '';
+            proc.stdout?.on('data', (data: Buffer) => {
+                stdout += decoder.decode(data, { stream: true });
+            });
+            proc.stderr?.on('data', (data: Buffer) => { stderr += data.toString(); });
+            proc.on('close', (code) => {
+                stdout += decoder.decode(); // 刷新缓冲区
+                if (code === 0) resolve(stdout);
+                else reject(new Error(stderr || `keytool 退出码 ${code}`));
+            });
+            proc.on('error', (err) => reject(err));
+        });
+    }
+
+    /**
      * 从 JAVA_HOME 或常见 JDK 位置查找 keytool
      */
     async getKeytoolPath(): Promise<string> {
@@ -60,10 +81,17 @@ export class KeystoreManager {
 
         // 2. 尝试从 PATH 查找
         try {
-            const { stdout } = await execAsync(isWindows ? 'where keytool' : 'which keytool');
-            const foundPath = stdout.trim().split('\n')[0];
-            if (foundPath && fs.existsSync(foundPath)) {
-                return foundPath;
+            const whichOut = await new Promise<string>((resolve, reject) => {
+                const whichProc = spawn(isWindows ? 'where' : 'which', [keytoolName], { shell: false });
+                let out = '';
+                whichProc.stdout?.on('data', (d: Buffer) => { out += d.toString(); });
+                whichProc.on('close', (code) => {
+                    code === 0 ? resolve(out.trim().split('\n')[0]) : reject(new Error('not found'));
+                });
+                whichProc.on('error', reject);
+            });
+            if (whichOut && fs.existsSync(whichOut)) {
+                return whichOut;
             }
         } catch {
             // 不在 PATH 中
@@ -261,11 +289,9 @@ export class KeystoreManager {
     }
 
     /**
-     * 使用 keytool 命令生成 keystore
+     * 使用 keytool 命令生成 keystore（args 数组模式，避免中文乱码）
      */
     private async generateKeystore(keystorePath: string, cert: CertificateInfo): Promise<void> {
-        const keytool = await this.getKeytoolPath();
-
         const dnParts: string[] = [];
         if (cert.cn) dnParts.push(`CN=${cert.cn}`);
         if (cert.ou) dnParts.push(`OU=${cert.ou}`);
@@ -275,26 +301,23 @@ export class KeystoreManager {
         if (cert.c) dnParts.push(`C=${cert.c}`);
         const dname = dnParts.join(', ');
 
-        const command = [
-            `"${keytool}"`,
-            '-genkeypair',
-            '-v',
-            `-keystore "${keystorePath}"`,
-            `-alias "${cert.alias}"`,
-            `-keyalg RSA`,
-            `-keysize 2048`,
-            `-validity ${cert.validity}`,
-            `-storepass "${cert.storePassword}"`,
-            `-keypass "${cert.keyPassword}"`,
-            `-dname "${dname}"`
-        ].join(' ');
-
         await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
             title: '正在生成 keystore...',
             cancellable: false
         }, async () => {
-            await execAsync(command);
+            await this.execKeytool([
+                '-genkeypair',
+                '-v',
+                '-keystore', keystorePath,
+                '-alias', cert.alias,
+                '-keyalg', 'RSA',
+                '-keysize', '2048',
+                '-validity', String(cert.validity),
+                '-storepass', cert.storePassword,
+                '-keypass', cert.keyPassword,
+                '-dname', dname
+            ]);
         });
     }
 
@@ -352,7 +375,32 @@ export class KeystoreManager {
     }
 
     /**
+     * 使用 keytool 列出 keystore 中的密钥别名（args 数组模式，避免中文乱码）
+     */
+    async getKeyAliases(keystorePath: string, storePassword: string): Promise<string[]> {
+        const stdout = await this.execKeytool([
+            '-list',
+            '-keystore', keystorePath,
+            '-storepass', storePassword
+        ]);
+
+        const aliases: string[] = [];
+        for (const line of stdout.split('\n')) {
+            // 匹配格式: "alias, date, PrivateKeyEntry,"
+            if (line.includes('PrivateKeyEntry') || line.includes('keyEntry')) {
+                const alias = line.split(',')[0]?.trim();
+                if (alias) {
+                    aliases.push(alias);
+                }
+            }
+        }
+
+        return aliases;
+    }
+
+    /**
      * 选择已有的 keystore 文件
+     * 流程：选文件 → 输入密码 → 自动读取别名列表 → 选择别名 → 输入密钥密码
      */
     async selectExistingKeystore(): Promise<string | null> {
         const uri = await vscode.window.showOpenDialog({
@@ -372,19 +420,10 @@ export class KeystoreManager {
 
         const keystorePath = uri[0].fsPath;
 
-        const alias = await vscode.window.showInputBox({
-            title: '密钥别名',
-            prompt: '输入此 keystore 中使用的密钥别名',
-            validateInput: v => v.trim() ? null : '必须填写别名'
-        });
-
-        if (!alias) {
-            return null;
-        }
-
+        // 输入 keystore 密码
         const storePassword = await vscode.window.showInputBox({
             title: 'Keystore 密码',
-            prompt: '输入 keystore 密码',
+            prompt: '输入 keystore 密码以读取别名',
             password: true,
             validateInput: v => v ? null : '必须填写密码'
         });
@@ -393,6 +432,42 @@ export class KeystoreManager {
             return null;
         }
 
+        // 自动读取别名列表
+        let aliases: string[] = [];
+        try {
+            aliases = await this.getKeyAliases(keystorePath, storePassword);
+        } catch (error: any) {
+            const retry = await vscode.window.showErrorMessage(
+                `无法读取 keystore 别名: ${error.message}。密码可能错误。`,
+                '重试',
+                '取消'
+            );
+            if (retry === '重试') {
+                return await this.selectExistingKeystore();
+            }
+            return null;
+        }
+
+        if (aliases.length === 0) {
+            vscode.window.showErrorMessage('该 keystore 中未找到任何密钥条目');
+            return null;
+        }
+
+        // 选择别名
+        let alias: string;
+        if (aliases.length === 1) {
+            alias = aliases[0];
+            vscode.window.showInformationMessage(`使用密钥: ${alias}`);
+        } else {
+            const selected = await vscode.window.showQuickPick(
+                aliases.map(a => ({ label: a, value: a })),
+                { placeHolder: '选择要使用的密钥别名' }
+            );
+            if (!selected) return null;
+            alias = selected.value;
+        }
+
+        // 输入密钥密码
         const keyPassword = await vscode.window.showInputBox({
             title: '密钥密码',
             prompt: '输入密钥密码（留空表示与 keystore 密码相同）',
@@ -402,7 +477,7 @@ export class KeystoreManager {
         await this.saveKeystoreConfig({ keystorePath, keyAlias: alias });
         await this.savePasswords(storePassword, keyPassword || storePassword);
 
-        vscode.window.showInformationMessage(`Keystore 已配置: ${path.basename(keystorePath)}`);
+        vscode.window.showInformationMessage(`Keystore 已配置: ${path.basename(keystorePath)} (${alias})`);
 
         return keystorePath;
     }

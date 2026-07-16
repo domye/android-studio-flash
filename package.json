@@ -152,6 +152,11 @@
         "category": "Android"
       },
       {
+        "command": "android.selectKeystore",
+        "title": "选择已有密钥",
+        "category": "Android"
+      },
+      {
         "command": "android.selectModule",
         "title": "选择目标模块",
         "category": "Android",

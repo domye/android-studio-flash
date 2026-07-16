@@ -108,24 +108,41 @@ export class GradleService {
 
         await this.ensureLocalProperties(projectRoot);
 
-        let command = `"${gradlew}" ${finalTask}`;
+        // 将任务字符串拆分为参数数组（避免 shell 拼接导致中文乱码）
+        const taskArgs = finalTask.split(' ').filter(s => s.length > 0);
 
-        // Windows 兼容性：若只有 shell 脚本则通过 Java 直接运行
+        // 确定可执行文件和参数列表
+        let executable: string;
+        let args: string[];
+
         if (os.platform() === 'win32' && !gradlew.endsWith('.bat')) {
             const jarPath = path.join(projectRoot, 'gradle', 'wrapper', 'gradle-wrapper.jar');
             if (fs.existsSync(jarPath)) {
-                command = `java -Dorg.gradle.appname=gradlew -cp "${jarPath}" org.gradle.wrapper.GradleWrapperMain ${finalTask}`;
+                // 使用 Java 直接运行 Gradle Wrapper（完全绕开 cmd.exe）
+                executable = 'java';
+                args = [
+                    '-Dorg.gradle.appname=gradlew',
+                    '-cp', jarPath,
+                    'org.gradle.wrapper.GradleWrapperMain',
+                    ...taskArgs
+                ];
                 if (showOutput) this.outputChannel.appendLine('通过 Java 运行 Gradle（Windows 兼容模式）');
             } else {
                 await this.ensureUnixLineEndings(gradlew);
-                command = `bash "./gradlew" ${finalTask}`;
+                executable = 'bash';
+                args = [gradlew, ...taskArgs];
             }
+        } else if (os.platform() === 'win32' && gradlew.endsWith('.bat')) {
+            executable = 'cmd.exe';
+            args = ['/c', gradlew, ...taskArgs];
+        } else {
+            executable = gradlew;
+            args = taskArgs;
         }
 
         return new Promise<string>((resolve, reject) => {
-            const proc = spawn(command, [], {
+            const proc = spawn(executable, args, {
                 cwd: projectRoot,
-                shell: true,
                 env: { ...process.env, JAVA_HOME: process.env.JAVA_HOME }
             });
 
@@ -189,7 +206,7 @@ export class GradleService {
     }
 
     /**
-     * 构建 Release APK
+     * 构建 Release APK（无签名配置时使用 Android 默认 debug keystore 作为后备）
      */
     async buildRelease(): Promise<string> {
         return await vscode.window.withProgress({
@@ -197,12 +214,121 @@ export class GradleService {
             title: '正在构建 Release APK...',
             cancellable: false
         }, async () => {
+            const projectRoot = this.findProjectRoot();
+            const props = this.detectSigningPropertyNames(projectRoot);
+
+            const debugKeystore = path.join(
+                os.homedir(),
+                '.android',
+                'debug.keystore'
+            );
+
+            if (fs.existsSync(debugKeystore)) {
+                const signingArgs = [
+                    `-P${props.storeFile}=${debugKeystore}`,
+                    `-P${props.storePassword}=android`,
+                    `-P${props.keyAlias}=androiddebugkey`,
+                    `-P${props.keyPassword}=android`
+                ].join(' ');
+                return await this.executeGradleTask(`assembleRelease ${signingArgs}`);
+            }
+
             return await this.executeGradleTask('assembleRelease');
         });
     }
 
     /**
+     * 检测 build.gradle 中 release signingConfig 引用的属性名。
+     * 返回 { storeFile, storePassword, keyAlias, keyPassword } 各属性在项目中对应的 -P 参数名。
+     * 未检测到时返回仅含 ANDROID_SIGNING_* 的回退映射。
+     */
+    private detectSigningPropertyNames(projectRoot: string): {
+        storeFile: string;
+        storePassword: string;
+        keyAlias: string;
+        keyPassword: string;
+    } {
+        const defaultMap = {
+            storeFile: 'ANDROID_SIGNING_STORE_FILE',
+            storePassword: 'ANDROID_SIGNING_STORE_PASSWORD',
+            keyAlias: 'ANDROID_SIGNING_KEY_ALIAS',
+            keyPassword: 'ANDROID_SIGNING_KEY_PASSWORD',
+        };
+
+        // 查找 app 模块的构建脚本
+        const gradleFiles = [
+            path.join(projectRoot, 'app', 'build.gradle.kts'),
+            path.join(projectRoot, 'app', 'build.gradle'),
+        ];
+
+        let gradleContent: string | null = null;
+        for (const file of gradleFiles) {
+            if (fs.existsSync(file)) {
+                gradleContent = fs.readFileSync(file, 'utf-8');
+                break;
+            }
+        }
+
+        if (!gradleContent) return defaultMap;
+
+        // 提取 signingConfigs 块的内容
+        const signingConfigMatch = gradleContent.match(
+            /signingConfigs\s*\{[^}]*create\([\'"]release[\'"]\)\s*\{([\s\S]*?)\}\s*\}/i
+        );
+
+        if (!signingConfigMatch) {
+            console.log('未在 build.gradle 中找到 release signingConfig');
+            return defaultMap;
+        }
+
+        const block = signingConfigMatch[1];
+        console.log('检测到 signingConfig 块, 解析属性引用...');
+
+        // 尝试匹配 project.property("xxx") / project.findProperty("xxx") / project["xxx"]
+        const propertyRefs: Record<string, string | null> = {
+            storeFile: null,
+            storePassword: null,
+            keyAlias: null,
+            keyPassword: null,
+        };
+
+        for (const key of ['storeFile', 'storePassword', 'keyAlias', 'keyPassword'] as const) {
+            // 匹配 storeFile = file(project.property("XXX")) 或 storePassword = project.property("XXX")
+            const regex = new RegExp(
+                `${key}\\s*=\\s*(?:file\\(\\s*)?project\\.(?:findProperty|property)\\(\\s*[\'\"]([^\'\"]+)[\'\"]`
+            );
+            const match = block.match(regex);
+            if (match?.[1]) {
+                propertyRefs[key] = match[1];
+                continue;
+            }
+
+            // 匹配 storeFile file(XXX) 或 storeFile = XXX (直接引用变量/属性)
+            const directRegex = new RegExp(
+                `${key}\\s*=\\s*(?:file\\(\\s*)?([A-Z_][A-Z0-9_]*)(?:\\s*\\))?`,
+                'i'
+            );
+            const directMatch = block.match(directRegex);
+            if (directMatch?.[1]) {
+                // 排除关键字 (file, project, hasProperty 等)
+                const val = directMatch[1];
+                if (!['file', 'project', 'hasProperty', 'findProperty', 'property'].includes(val)) {
+                    propertyRefs[key] = val;
+                }
+            }
+        }
+
+        return {
+            storeFile: propertyRefs.storeFile || defaultMap.storeFile,
+            storePassword: propertyRefs.storePassword || defaultMap.storePassword,
+            keyAlias: propertyRefs.keyAlias || defaultMap.keyAlias,
+            keyPassword: propertyRefs.keyPassword || defaultMap.keyPassword,
+        };
+    }
+
+    /**
      * 构建已签名的 Release APK
+     * 自动检测项目使用的 -P 属性名并注入
      */
     async buildReleaseSigned(
         keystorePath: string,
@@ -215,12 +341,17 @@ export class GradleService {
             title: '正在构建已签名 Release APK...',
             cancellable: false
         }, async () => {
+            const projectRoot = this.findProjectRoot();
+            const props = this.detectSigningPropertyNames(projectRoot);
+
             const signingArgs = [
-                `"-PANDROID_SIGNING_STORE_FILE=${keystorePath}"`,
-                `"-PANDROID_SIGNING_KEY_ALIAS=${keyAlias}"`,
-                `"-PANDROID_SIGNING_STORE_PASSWORD=${storePassword}"`,
-                `"-PANDROID_SIGNING_KEY_PASSWORD=${keyPassword}"`
+                `-P${props.storeFile}=${keystorePath}`,
+                `-P${props.storePassword}=${storePassword}`,
+                `-P${props.keyAlias}=${keyAlias}`,
+                `-P${props.keyPassword}=${keyPassword}`
             ].join(' ');
+
+            console.log(`使用签名属性: ${props.storeFile}, ${props.storePassword}, ${props.keyAlias}, ${props.keyPassword}`);
 
             return await this.executeGradleTask(`assembleRelease ${signingArgs}`);
         });

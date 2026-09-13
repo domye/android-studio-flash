@@ -152,8 +152,11 @@ export class AndroidTreeProvider implements vscode.TreeDataProvider<AndroidTreeI
             try {
                 const savedWireless = await this.wirelessManager.getSavedDevices();
                 const connectedIds = new Set(devices.map(d => d.id));
+                const connectedIps = new Set(devices.filter(d => d.id.includes(':')).map(d => d.id.split(':')[0]));
                 
-                const disconnectedSaved = savedWireless.filter(saved => !connectedIds.has(saved.id));
+                const disconnectedSaved = savedWireless.filter(saved => 
+                    !connectedIds.has(saved.id) && (!saved.ipAddress || !connectedIps.has(saved.ipAddress))
+                );
                 
                 if (disconnectedSaved.length > 0) {
                     disconnectedSaved.forEach(saved => {

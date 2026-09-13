@@ -31,26 +31,32 @@ export async function activate(context: vscode.ExtensionContext) {
         logcatManager = new LogcatManager(deviceManager);
         wirelessManager = new WirelessADBManager(sdkManager.getADBPath(), context);
 
-        // Auto-save newly connected wireless devices
-        deviceManager.onDidChangeDevices(async () => {
-            const connectedDevices = deviceManager.getDevices();
-            for (const device of connectedDevices) {
-                if (device.id.includes(':') && (device.state === 'device' || device.state === 'online')) {
-                    const [ip, portStr] = device.id.split(':');
-                    const port = parseInt(portStr) || 5555;
-                    await wirelessManager.addSavedDevice({
-                        id: device.id,
-                        ipAddress: ip,
-                        port: port,
-                        connectionType: port === 5555 ? 'tcpip' : 'wireless-debug',
-                        model: device.model,
-                        product: device.product,
-                        device: device.device,
-                        state: device.state,
-                        type: 'device'
-                    });
-                }
+        // Auto-save newly connected wireless devices with debouncing to prevent event storms
+        let autoSaveTimeout: NodeJS.Timeout | undefined;
+        deviceManager.onDidChangeDevices(() => {
+            if (autoSaveTimeout) {
+                clearTimeout(autoSaveTimeout);
             }
+            autoSaveTimeout = setTimeout(async () => {
+                const connectedDevices = deviceManager.getDevices();
+                for (const device of connectedDevices) {
+                    if (device.id.includes(':') && (device.state === 'device' || device.state === 'online')) {
+                        const [ip, portStr] = device.id.split(':');
+                        const port = parseInt(portStr) || 5555;
+                        await wirelessManager.addSavedDevice({
+                            id: device.id,
+                            ipAddress: ip,
+                            port: port,
+                            connectionType: port === 5555 ? 'tcpip' : 'wireless-debug',
+                            model: device.model,
+                            product: device.product,
+                            device: device.device,
+                            state: device.state,
+                            type: 'device'
+                        });
+                    }
+                }
+            }, 300);
         });
 
         // Initialize signing components
@@ -341,7 +347,40 @@ export async function activate(context: vscode.ExtensionContext) {
                         if (success) {
                             vscode.window.showInformationMessage(`✅ Connected to ${device.model || endpoint}`);
                         } else {
-                            vscode.window.showErrorMessage(`❌ Failed to connect to ${device.model || endpoint}. Please ensure device is on the same network or pair it again.`);
+                            const choice = await vscode.window.showErrorMessage(
+                                `❌ Failed to connect to ${device.model || endpoint}. Device may be offline or the wireless port may have changed.`,
+                                'Change Port & Retry',
+                                'Pair Again'
+                            );
+                            if (choice === 'Change Port & Retry') {
+                                const newPortStr = await vscode.window.showInputBox({
+                                    prompt: `Enter current wireless port for ${device.ipAddress}`,
+                                    value: device.port ? String(device.port) : '5555',
+                                    validateInput: (val) => {
+                                        const p = parseInt(val);
+                                        return (!p || p < 1 || p > 65535) ? 'Please enter a valid port number (1-65535)' : null;
+                                    }
+                                });
+                                if (newPortStr) {
+                                    const newPort = parseInt(newPortStr);
+                                    const updatedDevice = {
+                                        ...device,
+                                        id: `${device.ipAddress}:${newPort}`,
+                                        port: newPort
+                                    };
+                                    await wirelessManager.removeSavedDevice(device.id);
+                                    await wirelessManager.addSavedDevice(updatedDevice);
+                                    
+                                    const retrySuccess = await wirelessManager.connectSavedDevice(updatedDevice);
+                                    if (retrySuccess) {
+                                        vscode.window.showInformationMessage(`✅ Connected to ${updatedDevice.model || `${updatedDevice.ipAddress}:${newPort}`}`);
+                                    } else {
+                                        vscode.window.showErrorMessage(`❌ Failed to connect to ${updatedDevice.ipAddress}:${newPort}.`);
+                                    }
+                                }
+                            } else if (choice === 'Pair Again') {
+                                vscode.commands.executeCommand('android.setupWireless');
+                            }
                         }
                         await deviceManager.refreshDevices();
                         treeProvider.refresh();

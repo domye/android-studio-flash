@@ -98,16 +98,25 @@ export class NetworkScanner {
                 try {
                     // Try to connect to query info
                     const { stdout } = await execAsync(`"${this.adbPath}" connect ${endpoint}`, { timeout: 3000 });
-                    if (stdout.includes('connected')) {
-                        // Fetch using our awesome friendly brand utility
+                    const wasAlreadyConnected = stdout.toLowerCase().includes('already connected');
+                    
+                    if (stdout.toLowerCase().includes('connected')) {
+                        // Fetch friendly brand utility
                         const info = await fetchFriendlyDeviceInfo(this.adbPath, endpoint, 'Wireless Device');
                         modelName = info.model;
                         
-                        // Disconnect so we don't hold the connection unless needed
-                        await execAsync(`"${this.adbPath}" disconnect ${endpoint}`, { timeout: 2000 });
+                        // ONLY disconnect if this was a temporary probe connection.
+                        // Never terminate a developer's active working connection!
+                        if (!wasAlreadyConnected) {
+                            try {
+                                await execAsync(`"${this.adbPath}" disconnect ${endpoint}`, { timeout: 2000 });
+                            } catch {
+                                // Ignore cleanup disconnect errors
+                            }
+                        }
                     }
                 } catch (e) {
-                    console.error(`Failed to connect & query info for ${endpoint}`, e);
+                    console.error(`Failed to connect & query info for ${endpoint}:`, e);
                 }
 
                 devices.push({

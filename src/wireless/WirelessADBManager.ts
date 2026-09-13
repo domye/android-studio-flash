@@ -176,10 +176,23 @@ export class WirelessADBManager {
         try {
             const saved = await this.loadWirelessDevices();
             
-            // Remove old version if exists
-            const filtered = saved.filter(d => d.id !== device.id);
+            // Check if exact same device record already exists with same port and model
+            const existing = saved.find(d => d.id === device.id);
+            if (existing && existing.model === device.model && existing.port === device.port) {
+                return; // No-op: skip redundant writes
+            }
+
+            // Remove any old entry for the same device ID, or for the same IP if dynamic wireless debug
+            const filtered = saved.filter(d => {
+                if (d.id === device.id) return false;
+                // If the same IP reconnected with a new port, supersede the stale port
+                if (d.ipAddress === device.ipAddress && device.connectionType === 'wireless-debug') {
+                    return false;
+                }
+                return true;
+            });
             
-            // Add new device
+            // Add new / updated device
             filtered.push({
                 id: device.id,
                 ipAddress: device.ipAddress,
@@ -190,7 +203,7 @@ export class WirelessADBManager {
             });
 
             await this.context.globalState.update(this.STORAGE_KEY, filtered);
-            console.log(`✅ Added device to saved list: ${device.id}`);
+            console.log(`✅ Added/Updated device in saved list: ${device.id}`);
         } catch (error) {
             console.error('Failed to add saved device:', error);
         }

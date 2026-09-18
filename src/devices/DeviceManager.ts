@@ -174,7 +174,7 @@ export class DeviceManager {
      */
     async selectDevice(): Promise<void> {
         if (this.devices.length === 0) {
-            vscode.window.showWarningMessage('⚠️ No devices connected!');
+            vscode.window.showWarningMessage('没有已连接的设备！');
             return;
         }
 
@@ -185,7 +185,7 @@ export class DeviceManager {
         }));
 
         const selected = await vscode.window.showQuickPick(items, {
-            placeHolder: 'Select a device'
+            placeHolder: '选择设备'
         });
 
         if (selected) {

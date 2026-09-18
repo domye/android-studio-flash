@@ -435,7 +435,7 @@ export class PackageNameDetector {
         });
 
         const selected = await vscode.window.showQuickPick(uniqueItems, {
-            placeHolder: 'Select Package Name (sorted by accuracy)'
+            placeHolder: '选择包名 (按准确度排序)'
         });
 
         if (!selected || selected.kind === vscode.QuickPickItemKind.Separator) {

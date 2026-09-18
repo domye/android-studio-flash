@@ -41,28 +41,28 @@ export class AndroidTreeProvider implements vscode.TreeDataProvider<AndroidTreeI
             // Root elements
             return [
                 // Build Actions section
-                new AndroidTreeItem('🔨 Build Actions', '', 'header', vscode.TreeItemCollapsibleState.Expanded),
+                new AndroidTreeItem('构建操作', '', 'header', vscode.TreeItemCollapsibleState.Expanded),
 
                 // Devices section (Now includes wireless controls)
-                new AndroidTreeItem('📱 Devices', '', 'header', vscode.TreeItemCollapsibleState.Expanded),
+                new AndroidTreeItem('设备', '', 'header', vscode.TreeItemCollapsibleState.Expanded),
                 
                 // Note: "Wireless Devices" folder has been removed as requested
                 
                 // Tools section
-                new AndroidTreeItem('🛠️ Tools', '', 'header', vscode.TreeItemCollapsibleState.Expanded)
+                new AndroidTreeItem('工具', '', 'header', vscode.TreeItemCollapsibleState.Expanded)
             ];
         }
 
         // Children based on section
-        if (element.label === '🔨 Build Actions') {
+        if (element.label === '构建操作') {
             const children: AndroidTreeItem[] = [];
 
             // 1. Module Selector (Nested Folder)
-            const currentModule = this.gradleService.getTargetModule() || '(Project Root)';
+            const currentModule = this.gradleService.getTargetModule() || '(项目根目录)';
             
             // This item acts as a folder containing the modules
             const moduleItem = new AndroidTreeItem(
-                `📦 Target: ${currentModule}`, 
+                `目标模块: ${currentModule}`, 
                 '', 
                 'header', // Use header type for folder icon behavior or customized below
                 vscode.TreeItemCollapsibleState.Collapsed
@@ -71,17 +71,17 @@ export class AndroidTreeProvider implements vscode.TreeDataProvider<AndroidTreeI
             children.push(moduleItem);
 
             // 2. Build Commands
-            children.push(new AndroidTreeItem('▶️  Build & Run', 'android.runApp', 'action'));
-            children.push(new AndroidTreeItem('🔨 Build Debug APK', 'android.buildDebug', 'action'));
-            children.push(new AndroidTreeItem('📦 Build Release APK', 'android.buildRelease', 'action'));
-            children.push(new AndroidTreeItem('🧹 Clean Project', 'android.cleanProject', 'action'));
-            children.push(new AndroidTreeItem('🔄 Sync Gradle', 'android.syncGradle', 'action'));
+            children.push(new AndroidTreeItem('构建并运行', 'android.runApp', 'action'));
+            children.push(new AndroidTreeItem('构建 Debug APK', 'android.buildDebug', 'action'));
+            children.push(new AndroidTreeItem('构建 Release APK', 'android.buildRelease', 'action'));
+            children.push(new AndroidTreeItem('清理项目', 'android.cleanProject', 'action'));
+            children.push(new AndroidTreeItem('同步 Gradle', 'android.syncGradle', 'action'));
 
             return children;
         }
 
         // Handle the "Target" item specifically
-        if (element.label.startsWith('📦 Target:')) {
+        if (element.label.startsWith('目标模块:')) {
             const items: AndroidTreeItem[] = [];
             try {
                 const root = this.gradleService.findProjectRoot();
@@ -89,13 +89,13 @@ export class AndroidTreeProvider implements vscode.TreeDataProvider<AndroidTreeI
                 const currentModule = this.gradleService.getTargetModule(); // null means Project Root
 
                 // Add Project Root explicitly if not in list
-                if (!modules.includes('(Project Root)')) {
-                    modules.unshift('(Project Root)');
+                if (!modules.includes('(项目根目录)')) {
+                    modules.unshift('(项目根目录)');
                 }
 
                 modules.forEach(module => {
                     // Check if this module is selected
-                    const isSelected = (module === '(Project Root)' && currentModule === null) || 
+                    const isSelected = (module === '(项目根目录)' && currentModule === null) || 
                                        (module === currentModule);
                     
                     const label = isSelected ? `✓ ${module}` : module;
@@ -107,23 +107,23 @@ export class AndroidTreeProvider implements vscode.TreeDataProvider<AndroidTreeI
                     // Command to select this module
                     item.command = {
                         command: 'android.selectModuleFromTree',
-                        title: 'Select Module',
+                        title: '选择模块',
                         arguments: [module]
                     };
                     
                     if (isSelected) {
-                        item.description = 'Active';
+                        item.description = '当前';
                     }
 
                     items.push(item);
                 });
             } catch (error) {
-                items.push(new AndroidTreeItem('⚠️ Error loading modules', '', 'empty'));
+                items.push(new AndroidTreeItem('加载模块出错', '', 'empty'));
             }
             return items;
         }
 
-        if (element.label === '📱 Devices') {
+        if (element.label === '设备') {
             const items: AndroidTreeItem[] = [];
             const devices = this.deviceManager.getDevices();
             const selectedDevice = this.deviceManager.getSelectedDevice();
@@ -137,11 +137,11 @@ export class AndroidTreeProvider implements vscode.TreeDataProvider<AndroidTreeI
                     item.device = device;
                     if (device.id.includes(':')) {
                         item.contextValue = 'connectedWirelessDevice';
-                        item.tooltip = `Wireless Device (Connected) - Click to select`;
+                        item.tooltip = `无线设备 (已连接) - 点击选择`;
                     }
                     item.command = {
                         command: 'android.selectDeviceFromTree',
-                        title: 'Select Device',
+                        title: '选择设备',
                         arguments: [device]
                     };
                     items.push(item);
@@ -161,7 +161,7 @@ export class AndroidTreeProvider implements vscode.TreeDataProvider<AndroidTreeI
                 if (disconnectedSaved.length > 0) {
                     disconnectedSaved.forEach(saved => {
                         const name = saved.model || `${saved.ipAddress}:${saved.port}`;
-                        const label = `🔴 📡 [Saved] ${name}`;
+                        const label = `🔴 📡 [已保存] ${name}`;
                         const item = new AndroidTreeItem(label, saved.id, 'wireless-device');
                         item.device = {
                             id: saved.id,
@@ -173,40 +173,40 @@ export class AndroidTreeProvider implements vscode.TreeDataProvider<AndroidTreeI
                         } as any;
                         item.command = {
                             command: 'android.reconnectWirelessDevice',
-                            title: 'Reconnect Device',
+                            title: '重新连接设备',
                             arguments: [saved]
                         };
                         items.push(item);
                     });
                 }
             } catch (error) {
-                console.error('Failed to load saved wireless devices for tree view:', error);
+                console.error('加载已保存无线设备失败:', error);
             }
 
             // If no devices connected and no saved devices, show an information item
             if (items.length === 0) {
-                items.push(new AndroidTreeItem('⚠️  No devices connected', '', 'empty'));
+                items.push(new AndroidTreeItem('没有已连接的设备', '', 'empty'));
             }
 
             // 3. Add Wireless Device Option (Moved here as requested)
-            items.push(new AndroidTreeItem('➕ Add Wireless Device', 'android.setupWireless', 'action'));
+            items.push(new AndroidTreeItem('添加无线设备', 'android.setupWireless', 'action'));
 
             // 4. Reload Devices Option (Moved here as requested)
-            items.push(new AndroidTreeItem('🔄 Refresh Devices', 'android.refreshDevices', 'action'));
+            items.push(new AndroidTreeItem('刷新设备', 'android.refreshDevices', 'action'));
 
             return items;
         }
 
         // Note: The "Wireless Devices" block has been completely removed.
 
-        if (element.label === '🛠️ Tools') {
+        if (element.label === '工具') {
             return [
-                new AndroidTreeItem('📋 Show Logcat', 'android.showLogcat', 'action'),
-                new AndroidTreeItem('🔍 Logcat Filter Mode', 'android.toggleLogcatFilter', 'action'),
-                new AndroidTreeItem('🗑️  Clear Logcat', 'android.clearLogcat', 'action'),
-                new AndroidTreeItem('⏹️  Stop Logcat', 'android.stopLogcat', 'action'),
-                new AndroidTreeItem('🔐 Create Signing Key', 'android.createKeystore', 'action'),
-                new AndroidTreeItem('🔍 Run Diagnostics', 'android.runDiagnostics', 'action')
+                new AndroidTreeItem('显示 Logcat', 'android.showLogcat', 'action'),
+                new AndroidTreeItem('Logcat 过滤模式', 'android.toggleLogcatFilter', 'action'),
+                new AndroidTreeItem('清空 Logcat', 'android.clearLogcat', 'action'),
+                new AndroidTreeItem('停止 Logcat', 'android.stopLogcat', 'action'),
+                new AndroidTreeItem('创建签名密钥', 'android.createKeystore', 'action'),
+                new AndroidTreeItem('运行诊断', 'android.runDiagnostics', 'action')
             ];
         }
 
@@ -217,19 +217,19 @@ export class AndroidTreeProvider implements vscode.TreeDataProvider<AndroidTreeI
      * Get device label with status and type icons
      */
     private getDeviceLabel(device: AndroidDevice, isSelected: boolean): string {
-        const statusIcon = device.state === 'online' || device.state === 'device' ? '🟢' : '🔴';
+        const statusIcon = device.state === 'online' || device.state === 'device' ? '[在线]' : '[离线]';
         
         // Determine type icon based on device type
         let typeIcon: string;
         if (device.type === 'emulator') {
-            typeIcon = '📱'; // Emulator
+            typeIcon = '[模拟器]';
         } else if (device.id.includes(':')) {
-            typeIcon = '📡'; // Wireless device (contains port)
+            typeIcon = '[无线]';
         } else {
-            typeIcon = '🔌'; // USB device
+            typeIcon = '[USB]';
         }
         
-        const selectedMark = isSelected ? '✓ ' : '  ';
+        const selectedMark = isSelected ? '* ' : '  ';
         const name = device.model || device.product || device.id.substring(0, 15);
         
         return `${selectedMark}${statusIcon} ${typeIcon} ${name}`;
@@ -260,10 +260,10 @@ class AndroidTreeItem extends vscode.TreeItem {
             this.contextValue = 'androidAction';
         } else if (itemType === 'device') {
             this.contextValue = 'androidDevice';
-            this.tooltip = `Click to select this device`;
+            this.tooltip = `点击选择此设备`;
         } else if (itemType === 'wireless-device') {
             this.contextValue = 'disconnectedWirelessDevice';
-            this.tooltip = `Click to reconnect this device`;
+            this.tooltip = `点击重新连接此设备`;
             this.iconPath = new vscode.ThemeIcon('circle-outline');
         } else if (itemType === 'module') {
             this.contextValue = 'androidModule';

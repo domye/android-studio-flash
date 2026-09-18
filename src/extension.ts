@@ -19,7 +19,7 @@ let treeProvider: AndroidTreeProvider;
 let wirelessManager: WirelessADBManager;
 
 export async function activate(context: vscode.ExtensionContext) {
-    console.log('🚀 Android Studio Flash is now active!');
+    console.log('Android Studio Flash 已激活!');
 
     try {
         // Initialize core components
@@ -84,9 +84,9 @@ export async function activate(context: vscode.ExtensionContext) {
         const savedModule = context.workspaceState.get<string>('android-studio-flash.selectedModule');
         if (savedModule) {
             gradleService.setTargetModule(savedModule);
-            moduleStatusBar.text = `$(package) Module: ${savedModule}`;
+            moduleStatusBar.text = `模块: ${savedModule}`;
         } else {
-            moduleStatusBar.text = '$(package) Module: (Project Root)';
+            moduleStatusBar.text = '模块: (项目根目录)';
         }
         moduleStatusBar.show();
 
@@ -110,13 +110,13 @@ export async function activate(context: vscode.ExtensionContext) {
                     const modules = await gradleModuleService.getModules(root);
                     
                     if (modules.length === 0) {
-                        vscode.window.showInformationMessage('No modules found in settings.gradle');
+                        vscode.window.showInformationMessage('在 settings.gradle 中未找到模块');
                         return;
                     }
 
                     const selected = await vscode.window.showQuickPick(modules, {
-                        placeHolder: 'Select Gradle Module to Build',
-                        title: 'Select Active Module'
+                        placeHolder: '选择要构建的 Gradle 模块',
+                        title: '选择活动模块'
                     });
 
                     if (selected) {
@@ -128,13 +128,13 @@ export async function activate(context: vscode.ExtensionContext) {
                         
                         // Update UI
                         moduleStatusBar.text = `$(package) Module: ${selected}`;
-                        vscode.window.showInformationMessage(`✅ Active Module: ${selected}`);
+                        vscode.window.showInformationMessage(`活动模块: ${selected}`);
                         
                         // Refresh Tree to show checkmark
                         treeProvider.refresh();
                     }
                 } catch (error: any) {
-                    vscode.window.showErrorMessage(`Failed to select module: ${error.message}`);
+                    vscode.window.showErrorMessage(`选择模块失败: ${error.message}`);
                 }
             })
         );
@@ -150,7 +150,7 @@ export async function activate(context: vscode.ExtensionContext) {
                     await context.workspaceState.update('android-studio-flash.selectedModule', moduleName);
 
                     // Update UI
-                    moduleStatusBar.text = `$(package) Module: ${moduleName}`;
+                    moduleStatusBar.text = `模块: ${moduleName}`;
                     
                     // Refresh Tree to show checkmark
                     treeProvider.refresh();
@@ -221,7 +221,7 @@ export async function activate(context: vscode.ExtensionContext) {
                     });
                     statusBar.update();
                     treeProvider.refresh();
-                    vscode.window.showInformationMessage(`✅ Selected: ${device.id}`);
+                    vscode.window.showInformationMessage(`已选择: ${device.id}`);
                 }
             })
         );
@@ -250,7 +250,7 @@ export async function activate(context: vscode.ExtensionContext) {
         context.subscriptions.push(
             vscode.commands.registerCommand('android.stopLogcat', () => {
                 logcatManager.stopLogcat();
-                vscode.window.showInformationMessage('⏹️ Logcat stopped');
+                vscode.window.showInformationMessage('Logcat 已停止');
             })
         );
 
@@ -284,7 +284,7 @@ export async function activate(context: vscode.ExtensionContext) {
                     await deviceManager.refreshDevices();
                     treeProvider.refresh();
                 } else {
-                    vscode.window.showErrorMessage('❌ Could not identify device to disconnect.');
+                    vscode.window.showErrorMessage('无法识别要断开的设备。');
                 }
             })
         );
@@ -320,7 +320,7 @@ export async function activate(context: vscode.ExtensionContext) {
                     await deviceManager.refreshDevices();
                     treeProvider.refresh();
                 } else {
-                    vscode.window.showErrorMessage('❌ Could not identify device to forget.');
+                    vscode.window.showErrorMessage('无法识别要忘记的设备。');
                 }
             })
         );
@@ -340,25 +340,25 @@ export async function activate(context: vscode.ExtensionContext) {
                     const endpoint = `${device.ipAddress}:${device.port}`;
                     await vscode.window.withProgress({
                         location: vscode.ProgressLocation.Notification,
-                        title: `Connecting to ${device.model || endpoint}...`,
+                        title: `正在连接到 ${device.model || endpoint}...`,
                         cancellable: false
                     }, async () => {
                         const success = await wirelessManager.connectSavedDevice(device);
                         if (success) {
-                            vscode.window.showInformationMessage(`✅ Connected to ${device.model || endpoint}`);
+                            vscode.window.showInformationMessage(`已连接到 ${device.model || endpoint}`);
                         } else {
                             const choice = await vscode.window.showErrorMessage(
-                                `❌ Failed to connect to ${device.model || endpoint}. Device may be offline or the wireless port may have changed.`,
-                                'Change Port & Retry',
-                                'Pair Again'
+                                `连接到 ${device.model || endpoint} 失败。设备可能已离线或无线端口已更改。`,
+                                '更改端口并重试',
+                                '重新配对'
                             );
-                            if (choice === 'Change Port & Retry') {
+                            if (choice === '更改端口并重试') {
                                 const newPortStr = await vscode.window.showInputBox({
-                                    prompt: `Enter current wireless port for ${device.ipAddress}`,
+                                    prompt: `输入 ${device.ipAddress} 的当前无线端口`,
                                     value: device.port ? String(device.port) : '5555',
                                     validateInput: (val) => {
                                         const p = parseInt(val);
-                                        return (!p || p < 1 || p > 65535) ? 'Please enter a valid port number (1-65535)' : null;
+                                        return (!p || p < 1 || p > 65535) ? '请输入有效的端口号 (1-65535)' : null;
                                     }
                                 });
                                 if (newPortStr) {
@@ -373,12 +373,12 @@ export async function activate(context: vscode.ExtensionContext) {
                                     
                                     const retrySuccess = await wirelessManager.connectSavedDevice(updatedDevice);
                                     if (retrySuccess) {
-                                        vscode.window.showInformationMessage(`✅ Connected to ${updatedDevice.model || `${updatedDevice.ipAddress}:${newPort}`}`);
+                                        vscode.window.showInformationMessage(`已连接到 ${updatedDevice.model || `${updatedDevice.ipAddress}:${newPort}`}`);
                                     } else {
-                                        vscode.window.showErrorMessage(`❌ Failed to connect to ${updatedDevice.ipAddress}:${newPort}.`);
+                                        vscode.window.showErrorMessage(`连接到 ${updatedDevice.ipAddress}:${newPort} 失败。`);
                                     }
                                 }
-                            } else if (choice === 'Pair Again') {
+                            } else if (choice === '重新配对') {
                                 vscode.commands.executeCommand('android.setupWireless');
                             }
                         }
@@ -386,7 +386,7 @@ export async function activate(context: vscode.ExtensionContext) {
                         treeProvider.refresh();
                     });
                 } else {
-                    vscode.window.showErrorMessage('❌ Invalid device configuration for reconnection.');
+                    vscode.window.showErrorMessage('设备配置无效，无法重新连接。');
                 }
             })
         );
@@ -408,9 +408,9 @@ export async function activate(context: vscode.ExtensionContext) {
                 
                 if (ipAddress) {
                     await vscode.env.clipboard.writeText(ipAddress);
-                    vscode.window.showInformationMessage(`📋 Copied IP Address to Clipboard: ${ipAddress}`);
+                    vscode.window.showInformationMessage(`已复制 IP 地址到剪贴板: ${ipAddress}`);
                 } else {
-                    vscode.window.showErrorMessage('❌ Could not find IP Address for this device.');
+                    vscode.window.showErrorMessage('无法找到此设备的 IP 地址。');
                 }
             })
         );
@@ -427,19 +427,19 @@ export async function activate(context: vscode.ExtensionContext) {
                 }
                 
                 if (!device) {
-                    vscode.window.showErrorMessage('❌ Could not identify device to show information.');
+                    vscode.window.showErrorMessage('无法识别要显示信息的设备。');
                     return;
                 }
 
                 const isWireless = device.id.includes(':') || !!device.ipAddress;
                 const isEmulator = device.id.startsWith('emulator-') || device.type === 'emulator';
                 
-                let connectionTypeLabel = 'USB Connection';
+                let connectionTypeLabel = 'USB 连接';
                 if (isEmulator) {
-                    connectionTypeLabel = 'Android Virtual Device (Emulator)';
+                    connectionTypeLabel = 'Android 虚拟设备 (模拟器)';
                 } else if (isWireless) {
                     const port = device.port || (device.id.includes(':') ? parseInt(device.id.split(':')[1]) : 5555);
-                    connectionTypeLabel = port === 5555 ? 'Wireless (ADB over TCP/IP)' : 'Wireless Debugging (Android 11+)';
+                    connectionTypeLabel = port === 5555 ? '无线连接 (ADB over TCP/IP)' : '无线调试 (Android 11+)';
                 }
 
                 let ipAddress = device.ipAddress;
@@ -451,17 +451,17 @@ export async function activate(context: vscode.ExtensionContext) {
                 }
 
                 const details = [
-                    `📱 Device Info: ${device.model || device.product || 'Unknown'}`,
-                    `• Model: ${device.model || 'Unknown'}`,
-                    `• Product: ${device.product || 'Unknown'}`,
-                    `• Device ID/Serial: ${device.id}`,
-                    `• Connection Type: ${connectionTypeLabel}`,
-                    `• Current State: ${device.state || 'Unknown'}`
+                    `设备信息: ${device.model || device.product || '未知'}`,
+                    `型号: ${device.model || '未知'}`,
+                    `产品: ${device.product || '未知'}`,
+                    `设备 ID: ${device.id}`,
+                    `连接类型: ${connectionTypeLabel}`,
+                    `当前状态: ${device.state || '未知'}`
                 ];
 
                 if (isWireless && ipAddress) {
-                    details.push(`• IP Address: ${ipAddress}`);
-                    details.push(`• ADB Port: ${port}`);
+                    details.push(`IP 地址: ${ipAddress}`);
+                    details.push(`ADB 端口: ${port}`);
                 }
 
                 vscode.window.showInformationMessage(
@@ -479,16 +479,16 @@ export async function activate(context: vscode.ExtensionContext) {
         statusBar.update();
 
         // Welcome message
-        vscode.window.showInformationMessage('✅ Android Studio Flash is ready!');
+        vscode.window.showInformationMessage('Android Studio Flash 已就绪！');
 
     } catch (error) {
-        vscode.window.showErrorMessage(`❌ Extension initialization error: ${error}`);
+        vscode.window.showErrorMessage(`扩展初始化错误: ${error}`);
         console.error('Activation error:', error);
     }
 }
 
 export function deactivate() {
-    console.log('👋 Android Studio Flash is deactivating...');
+    console.log('Android Studio Flash 正在停用...');
     
     if (logcatManager) {
         logcatManager.dispose();

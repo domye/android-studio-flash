@@ -30,7 +30,7 @@ export class NetworkScanner {
     async scanNetwork(): Promise<ScannedDevice[]> {
         const localIp = this.getLocalIp();
         if (!localIp) {
-            vscode.window.showErrorMessage('❌ Could not determine local IP');
+            vscode.window.showErrorMessage('无法确定本地 IP 地址');
             return [];
         }
 
@@ -39,7 +39,7 @@ export class NetworkScanner {
 
         return await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
-            title: '🔍 Scanning network...',
+            title: '正在扫描网络...',
             cancellable: true
         }, async (progress, token) => {
             const activeIps: string[] = [];
@@ -78,7 +78,7 @@ export class NetworkScanner {
 
                 tested += batch.length;
                 progress.report({
-                    message: `Scanning subnet ${subnet}.x... (${tested}/${ipsToTest.length})`,
+                    message: `正在扫描子网 ${subnet}.x... (${tested}/${ipsToTest.length})`,
                     increment: (batch.length / ipsToTest.length) * 100
                 });
             }
@@ -89,7 +89,7 @@ export class NetworkScanner {
 
             // Step 2: Fetch friendly device names for discovered active IPs in parallel using ADB
             const devices: ScannedDevice[] = [];
-            progress.report({ message: `Fetching friendly name for ${activeIps.length} active device(s)...` });
+            progress.report({ message: `正在获取 ${activeIps.length} 个设备的友好名称...` });
 
             const fetchPromises = activeIps.map(async (ip) => {
                 const endpoint = `${ip}:${port}`;

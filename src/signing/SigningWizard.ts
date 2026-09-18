@@ -50,7 +50,7 @@ export class SigningWizard {
 
         if (!passwords) {
             const storePassword = await vscode.window.showInputBox({
-                title: 'Keystore Password',
+                title: '密钥库密码',
                 prompt: `输入 ${path.basename(config.keystorePath)} 的密码`,
                 password: true
             });
@@ -58,7 +58,7 @@ export class SigningWizard {
             if (!storePassword) return null;
 
             const keyPassword = await vscode.window.showInputBox({
-                title: 'Key Password',
+                title: '密钥密码',
                 prompt: '输入密钥密码（留空表示相同）',
                 password: true
             });

@@ -125,27 +125,6 @@ export class WirelessADBManager {
     }
 
     /**
-     * 保存所有当前无线设备
-     */
-    private async saveWirelessDevices(): Promise<void> {
-        try {
-            const savedDevices: SavedWirelessDevice[] = this.wirelessDevices.map(device => ({
-                id: device.id,
-                ipAddress: device.ipAddress,
-                port: device.port,
-                connectionType: device.connectionType,
-                model: device.model,
-                lastConnected: Date.now()
-            }));
-
-            await this.context.globalState.update(this.STORAGE_KEY, savedDevices);
-            console.log(`Saved ${savedDevices.length} wireless devices`);
-        } catch (error) {
-            console.error('Failed to save wireless devices:', error);
-        }
-    }
-
-    /**
      * 从存储中加载已保存的设备
      */
     private async loadWirelessDevices(): Promise<SavedWirelessDevice[]> {

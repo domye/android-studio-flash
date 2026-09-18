@@ -9,7 +9,7 @@ const execAsync = promisify(exec);
  * 诊断工具，测试 ADB 连接和设备状态。
  * 帮助用户排查常见设置问题。
  */
-export async function runDiagnostics(context: vscode.ExtensionContext): Promise<void> {
+export async function runDiagnostics(): Promise<void> {
     const outputChannel = vscode.window.createOutputChannel('Android Diagnostics');
     outputChannel.show();
 

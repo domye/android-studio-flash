@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
 import { AndroidSDKManager } from './core/AndroidSDKManager';
 import { GradleService } from './core/GradleService';
 import { GradleModuleService } from './core/GradleModuleService';
@@ -48,9 +47,6 @@ export async function activate(context: vscode.ExtensionContext) {
 
         treeProvider = new AndroidTreeProvider(
             deviceManager,
-            buildSystem,
-            logcatManager,
-            wirelessManager,
             gradleService,
             gradleModuleService
         );
@@ -240,7 +236,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
         context.subscriptions.push(
             vscode.commands.registerCommand('android.runDiagnostics', async () => {
-                await runDiagnostics(context);
+                await runDiagnostics();
             })
         );
 

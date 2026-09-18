@@ -1,8 +1,5 @@
 import * as vscode from 'vscode';
 import { DeviceManager, AndroidDevice } from '../devices/DeviceManager';
-import { BuildSystem } from '../build/BuildSystem';
-import { LogcatManager } from '../logcat/LogcatManager';
-import { WirelessADBManager } from '../wireless/WirelessADBManager';
 import { GradleService } from '../core/GradleService';
 import { GradleModuleService } from '../core/GradleModuleService';
 
@@ -25,9 +22,6 @@ export class AndroidTreeProvider implements vscode.TreeDataProvider<AndroidTreeI
 
     constructor(
         private deviceManager: DeviceManager,
-        private buildSystem: BuildSystem,
-        private logcatManager: LogcatManager,
-        private wirelessManager: WirelessADBManager,
         private gradleService: GradleService,
         private gradleModuleService: GradleModuleService
     ) {
